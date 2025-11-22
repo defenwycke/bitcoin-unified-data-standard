@@ -62,3 +62,26 @@ The **bytes on-chain** are just a small binary structure. Off-chain tools decode
 See `/examples/` and `/ref-impl/buds.py` for details.
 
 ---
+
+
+## License
+
+- Text/specs: **CC BY 4.0**
+- Reference implementation: **MIT**
+
+See `LICENSE` for details.
+
+---
+
+## Contributing
+
+To request a new type ID or registry change:
+
+1. Read `/docs/registry-process.md`.
+2. Update `/registry/registry.json`.
+3. Add any necessary examples.
+4. Open a pull request.
+
+BUDS is intentionally small and focused. Keep changes minimal and well-justified.
+
+---
