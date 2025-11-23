@@ -27,6 +27,15 @@
       font-size: 12px;
       color: #aaa;
     }
+    header a {
+      color: #ff6a00;
+      font-size: 12px;
+      text-decoration: none;
+      margin-left: 16px;
+    }
+    header a:hover {
+      text-decoration: underline;
+    }
     main {
       display: flex;
       gap: 16px;
@@ -68,7 +77,7 @@
       font-size: 12px;
       color: #ccc;
     }
-    input[type="text"], textarea, select {
+    input[type="text"], textarea, select, input[type="number"] {
       background: #111;
       color: #f5f5f5;
       border: 1px solid #333;
@@ -81,7 +90,7 @@
     }
     textarea {
       resize: vertical;
-      min-height: 80px;
+      min-height: 120px;
     }
     button {
       background: #ff6a00;
@@ -104,6 +113,21 @@
     .btn-secondary:hover {
       background: #333;
     }
+    .btn-pill {
+      border-radius: 999px;
+      padding: 4px 10px;
+      font-size: 11px;
+    }
+    .btn-pill-active {
+      background: #ff6a00;
+      color: #000;
+      border-color: #ff6a00;
+    }
+    .btn-pill-inactive {
+      background: #222;
+      color: #ddd;
+      border: 1px solid #333;
+    }
     .tag-list {
       font-family: monospace;
       white-space: pre;
@@ -111,6 +135,7 @@
       padding: 8px;
       border-radius: 4px;
       border: 1px solid #222;
+      min-height: 120px;
     }
     .badge {
       display: inline-block;
@@ -130,11 +155,7 @@
       display: flex;
       gap: 8px;
       align-items: center;
-      margin-bottom: 8px;
-    }
-    .pill-row button {
-      padding: 4px 8px;
-      font-size: 11px;
+      margin-bottom: 4px;
     }
     .tx-section {
       border: 1px solid #222;
@@ -156,43 +177,65 @@
       <h1>BUDS LAB</h1>
       <span>Bitcoin Unified Data Standard – Tag Engine Playground</span>
     </div>
-    <div class="small-text">
-      Tag Engine: OP_RETURN / P2PKH / blob-size heuristic<br/>
-      Non-consensus, reference only.
+    <div>
+      <div class="small-text">
+        Tag Engine: OP_RETURN / P2PKH / blob-size heuristic · T0–T3 tiers<br/>
+        Non-consensus, reference only.
+      </div>
+      <div style="text-align:right; margin-top:4px;">
+        <a href="../docs/buds-lab.md" target="_blank">Docs</a>
+      </div>
     </div>
   </header>
 
   <main>
-    <!-- LEFT: TX builder -->
+    <!-- LEFT: TX builder / JSON -->
     <section class="panel">
       <div class="panel-header">
-        <span>Transaction Builder</span>
+        <span>Transaction Input</span>
         <div class="pill-row">
+          <button id="modeBuilderBtn" class="btn-pill btn-pill-active" type="button" onclick="setInputMode('builder')">Builder</button>
+          <button id="modeJsonBtn" class="btn-pill btn-pill-inactive" type="button" onclick="setInputMode('json')">JSON</button>
           <button class="btn-secondary" type="button" onclick="loadExampleTx()">Load example</button>
           <button class="btn-secondary" type="button" onclick="clearTx()">Clear</button>
         </div>
       </div>
       <div class="panel-body">
-        <div class="row">
-          <label style="flex:0 0 80px;">TXID</label>
-          <input type="text" id="txid" placeholder="deadbeef..." />
-        </div>
+        <!-- Builder mode -->
+        <div id="builderMode">
+          <div class="row">
+            <label style="flex:0 0 80px;">TXID</label>
+            <input type="text" id="txid" placeholder="deadbeef..." />
+          </div>
 
-        <div class="tx-section">
-          <h4>Outputs (scriptPubKey)</h4>
-          <div id="outputs"></div>
-          <button type="button" onclick="addOutput()">+ Add output</button>
-          <div class="small-text" style="margin-top:4px;">
-            Choose a template (P2PKH / P2WPKH / P2TR / OP_RETURN) or customise ASM + hex.
+          <div class="tx-section">
+            <h4>Outputs (scriptPubKey)</h4>
+            <div id="outputs"></div>
+            <button type="button" onclick="addOutput()">+ Add output</button>
+            <div class="small-text" style="margin-top:4px;">
+              Choose a template (P2PKH / P2WPKH / P2TR / OP_RETURN) or customise ASM + hex.
+            </div>
+          </div>
+
+          <div class="tx-section">
+            <h4>Witness (stack items)</h4>
+            <div id="witness"></div>
+            <button type="button" onclick="addWitnessItem()">+ Add witness item</button>
+            <div class="small-text" style="margin-top:4px;">
+              Large blobs (&gt;512 bytes) are tagged as <code>da.obfuscated</code>, smaller items as <code>da.unknown</code>.
+            </div>
           </div>
         </div>
 
-        <div class="tx-section">
-          <h4>Witness (stack items)</h4>
-          <div id="witness"></div>
-          <button type="button" onclick="addWitnessItem()">+ Add witness item</button>
-          <div class="small-text" style="margin-top:4px;">
-            Large blobs (&gt;512 bytes) are tagged as <code>da.obfuscated</code>, smaller items as <code>da.unknown</code>.
+        <!-- JSON mode -->
+        <div id="jsonMode" style="display:none;">
+          <div class="tx-section">
+            <h4>Paste SimpleTx JSON</h4>
+            <textarea id="jsonInput" placeholder='{"txid":"...","vout":[{"scriptPubKey":{"asm":"...","hex":"..."}}],"witness":[{"stack":["..."]}]}'></textarea>
+            <div class="small-text" style="margin-top:4px;">
+              Expected shape:
+              <code>{ txid, vout: [ { scriptPubKey: { asm, hex } } ], witness: [ { stack: [hex] } ] }</code>.
+            </div>
           </div>
         </div>
       </div>
@@ -202,13 +245,40 @@
     <section class="panel">
       <div class="panel-header">
         <span>BUDS Tag Engine Output</span>
-        <button type="button" onclick="runTagEngine()">Run Tag Engine</button>
+        <div class="pill-row">
+          <button class="btn-secondary" type="button" onclick="exportJson()">Export JSON</button>
+          <button type="button" onclick="runTagEngine()">Run Tag Engine</button>
+        </div>
       </div>
       <div class="panel-body">
+        <div class="tx-section">
+          <h4>Node Policy & Fees (example)</h4>
+          <div class="row">
+            <label style="flex:0 0 130px;">Base mempool min (sat/vB)</label>
+            <input type="number" id="baseMinFeerate" value="1" step="0.1" />
+          </div>
+          <div class="row">
+            <label style="flex:0 0 130px;">Tx feerate (sat/vB)</label>
+            <input type="number" id="txFeerate" value="5" step="0.1" />
+          </div>
+          <div class="row">
+            <label style="flex:0 0 130px;">Policy profile</label>
+            <select id="policyProfile">
+              <option value="neutral">Neutral (demo)</option>
+              <option value="strict">Strict (data-unfriendly)</option>
+              <option value="permissive">Permissive</option>
+            </select>
+          </div>
+          <div class="small-text">
+            These are <em>local</em> node policies, not consensus rules.
+          </div>
+        </div>
+
         <div id="summary"></div>
+
         <div style="margin-top:8px;">
           <div class="small-text">Tags</div>
-          <div id="tagList" class="tag-list">No tags yet. Build a transaction and click "Run Tag Engine".</div>
+          <div id="tagList" class="tag-list">No tags yet. Build or paste a transaction and click "Run Tag Engine".</div>
         </div>
       </div>
     </section>
@@ -216,7 +286,29 @@
 
   <script src="buds-tag-engine.js"></script>
   <script>
-    // --- UI helpers to build a SimpleTx-like object ---
+    let currentInputMode = "builder";
+    let lastResult = null;
+
+    function setInputMode(mode) {
+      currentInputMode = mode;
+
+      const builder = document.getElementById("builderMode");
+      const json = document.getElementById("jsonMode");
+      const builderBtn = document.getElementById("modeBuilderBtn");
+      const jsonBtn = document.getElementById("modeJsonBtn");
+
+      if (mode === "builder") {
+        builder.style.display = "";
+        json.style.display = "none";
+        builderBtn.className = "btn-pill btn-pill-active";
+        jsonBtn.className = "btn-pill btn-pill-inactive";
+      } else {
+        builder.style.display = "none";
+        json.style.display = "";
+        builderBtn.className = "btn-pill btn-pill-inactive";
+        jsonBtn.className = "btn-pill btn-pill-active";
+      }
+    }
 
     function addOutput(type = "custom", spkAsm = "", spkHex = "") {
       const container = document.getElementById("outputs");
@@ -303,22 +395,50 @@
       document.getElementById("txid").value = "";
       document.getElementById("outputs").innerHTML = "";
       document.getElementById("witness").innerHTML = "";
-      document.getElementById("tagList").textContent = 'No tags yet. Build a transaction and click "Run Tag Engine".';
+      document.getElementById("jsonInput").value = "";
+      document.getElementById("tagList").textContent = 'No tags yet. Build or paste a transaction and click "Run Tag Engine".';
       document.getElementById("summary").innerHTML = "";
+      lastResult = null;
     }
 
     function loadExampleTx() {
+      if (currentInputMode === "json") {
+        const example = {
+          txid: "deadbeefcafebabe0011223344556677",
+          vout: [
+            {
+              scriptPubKey: {
+                asm: "OP_DUP OP_HASH160 <pubkeyhash> OP_EQUALVERIFY OP_CHECKSIG",
+                hex: "76a91400112233445566778899aabbccddeeff0011223388ac"
+              }
+            },
+            {
+              scriptPubKey: {
+                asm: "OP_RETURN 6f6b",
+                hex: "6a026f6b"
+              }
+            }
+          ],
+          witness: [
+            {
+              stack: ["00".repeat(600)]
+            }
+          ]
+        };
+        document.getElementById("jsonInput").value = JSON.stringify(example, null, 2);
+        return;
+      }
+
       clearTx();
       document.getElementById("txid").value = "deadbeefcafebabe0011223344556677";
       addOutput("p2pkh");
       addOutput("opreturn");
-      // large witness blob (600 bytes)
       let bigHex = "";
       for (let i = 0; i < 600; i++) bigHex += "00";
       addWitnessItem(bigHex);
     }
 
-    function runTagEngine() {
+    function buildTxFromBuilder() {
       const txid = document.getElementById("txid").value || "<no-txid>";
 
       const outputs = [];
@@ -340,15 +460,43 @@
         witness.push({ stack: witItems });
       }
 
-      const tx = { txid, vout: outputs, witness };
+      return { txid, vout: outputs, witness };
+    }
 
-      const engine = new BudsTagEngine();
+    function buildTxFromJson() {
+      const raw = document.getElementById("jsonInput").value.trim();
+      if (!raw) {
+        alert("Paste a JSON transaction first.");
+        return null;
+      }
+      try {
+        const obj = JSON.parse(raw);
+        return obj;
+      } catch (e) {
+        alert("Failed to parse JSON: " + e.message);
+        return null;
+      }
+    }
+
+    function runTagEngine() {
+      let tx;
+      if (currentInputMode === "builder") {
+        tx = buildTxFromBuilder();
+      } else {
+        tx = buildTxFromJson();
+        if (!tx) return;
+      }
+
+      const baseMin = parseFloat(document.getElementById("baseMinFeerate").value) || 1.0;
+      const txFeerate = parseFloat(document.getElementById("txFeerate").value) || 5.0;
+      const profile = document.getElementById("policyProfile").value || "neutral";
+
+      const engine = new BudsTagEngine(profile);
       const classification = engine.classify(tx);
-
-      // Demo policy (like C++)
-      const baseMin = 1.0;
-      const txFeerate = 5.0;
+      const tiers = engine.summarizeTiers(classification);
       const policy = engine.computePolicy(classification, baseMin, txFeerate);
+
+      lastResult = { tx, classification, tiers, policy, profile };
 
       const tagLines = classification.tags.map(tag => {
         const labelsStr = tag.labels.join(",");
@@ -364,10 +512,16 @@
         labelsHtml += `<span class="badge">${label}</span>`;
       });
 
+      const tiersStr = tiers.tiersPresent.length ? tiers.tiersPresent.join(", ") : "none";
+
       const summaryHtml = `
         <div class="small-text">Classification summary</div>
-        <div style="margin:4px 0 8px 0;">${labelsHtml || "<em>No labels</em>"}</div>
-        <div class="small-text">Example policy (non-normative)</div>
+        <div style="margin:4px 0 4px 0;">${labelsHtml || "<em>No labels</em>"}</div>
+        <div class="small-text">Triage tiers present: ${tiersStr}</div>
+        <div class="small-text" style="margin-bottom:4px;">
+          T0 = consensus, T1 = economic, T2 = metadata, T3 = unknown/obfuscated.
+        </div>
+        <div class="small-text">Example policy (profile: <strong>${profile}</strong>)</div>
         <div class="tag-list">
 base mempool min : ${baseMin.toFixed(2)} sat/vB
 tx feerate       : ${txFeerate.toFixed(2)} sat/vB
@@ -379,8 +533,35 @@ effective score  : ${policy.score.toFixed(2)} (scaled sat/vB)
       document.getElementById("summary").innerHTML = summaryHtml;
     }
 
+    function exportJson() {
+      if (!lastResult) {
+        alert("Run the Tag Engine first before exporting.");
+        return;
+      }
+      const out = JSON.stringify(lastResult, null, 2);
+
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(out)
+          .then(() => alert("BUDS LAB result copied to clipboard as JSON."))
+          .catch(() => {
+            // fallback: open prompt
+            window.prompt("Copy JSON:", out);
+          });
+      } else {
+        window.prompt("Copy JSON:", out);
+      }
+    }
+
     // init
-    loadExampleTx();
+    setInputMode("builder");
+    clearTx();
+    // preload example into builder
+    document.getElementById("txid").value = "deadbeefcafebabe0011223344556677";
+    addOutput("p2pkh");
+    addOutput("opreturn");
+    let bigHex = "";
+    for (let i = 0; i < 600; i++) bigHex += "00";
+    addWitnessItem(bigHex);
   </script>
 </body>
 </html>
