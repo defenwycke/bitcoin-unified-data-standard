@@ -45,8 +45,6 @@ class BudsTagEngine {
     return true;
   }
 
-  // TODO: add P2WPKH / P2TR / multisig detection if needed later
-
   // --- main classification ---
 
   classify(tx) {
@@ -148,6 +146,24 @@ class BudsTagEngine {
       tiersPresent: Array.from(tiersPresent).sort(),
       counts
     };
+  }
+
+  // --- ARBDA – transaction-level tier (guilty until proven innocent) ---
+
+  /**
+   * Compute ARBDA tx tier from per-tier counts:
+   *
+   * if has T3 -> T3
+   * else if has T2 -> T2
+   * else if has T1 -> T1
+   * else -> T0
+   */
+  computeArbdaTierFromCounts(counts) {
+    if (!counts) return "T0";
+    if ((counts.T3 || 0) > 0) return "T3";
+    if ((counts.T2 || 0) > 0) return "T2";
+    if ((counts.T1 || 0) > 0) return "T1";
+    return "T0";
   }
 
   // --- policy model ---
