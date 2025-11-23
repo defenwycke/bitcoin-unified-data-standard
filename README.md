@@ -68,6 +68,32 @@ See the [Demo CLI instructions](docs/demo-cli.md) for build/run details.
 
 ---
 
+## Running tests
+
+A minimal C++ test suite is provided for the reference Tagger.
+
+From the repo root (e.g. in GitHub Codespaces):
+
+```
+g++ -std=c++17 -Isrc \
+    tests/test_buds_tagger.cpp \
+    src/buds_labels.cpp \
+    src/buds_tagging.cpp \
+    -o buds-tests
+
+./buds-tests
+```
+
+This runs a few basic checks:
+
+- P2PKH output → pay.standard
+- OP_RETURN output → da.op_return_embed
+- small witness item → da.unknown
+- large witness blob → da.obfuscated
+- mixed transaction → all of the above present
+
+---
+
 ## License
 
 MIT unless otherwise noted.
