@@ -111,6 +111,20 @@ Contains:
      surface=witness.stack[0:0]  range=[0,600)  labels=[da.obfuscated]
 ```
 
+5. **ARBDA transaction tier**
+
+BUDS LAB also computes an **ARBDA (Arbitrary Data) tier** for the whole transaction:
+
+- If any `T3` data is present → `ARBDA = T3`  
+- Else if any `T2` data is present → `ARBDA = T2`  
+- Else if any `T1` data is present → `ARBDA = T1`  
+- Else → `ARBDA = T0`
+
+This reflects a conservative “guilty until proven innocent” rule for arbitrary/obfuscated data. 
+Even if a transaction has many T0/T1 regions, a single T3 blob is enough to make the whole tx `ARBDA = T3`.
+
+The ARBDA tier is shown in the LAB summary and included in the JSON export (`"arbdaTier"` field).
+
 ---
 
 ## 2. BUDS Tag Engine (browser version)
