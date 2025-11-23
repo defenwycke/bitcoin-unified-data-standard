@@ -162,6 +162,53 @@
       opacity: 0.7;
       padding: 0 16px 8px;
     }
+
+    /* Summary & ARBDA styling */
+    .summary-box {
+      font-size: 12px;
+      line-height: 1.4;
+    }
+    .summary-card {
+      background: #050505;
+      border-radius: 8px;
+      border: 1px solid #333;
+      padding: 6px 8px;
+      margin-top: 6px;
+    }
+    .summary-heading {
+      font-size: 12px;
+      font-weight: 600;
+      margin-bottom: 4px;
+    }
+
+    .arbda-card {
+      background: #050505;
+      border-radius: 10px;
+      border: 1px solid #333;
+      padding: 8px 10px;
+      margin-top: 8px;
+    }
+    .arbda-label {
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      opacity: 0.8;
+    }
+    .arbda-value {
+      font-size: 24px;
+      font-weight: 700;
+      margin-top: 4px;
+    }
+    .arbda-desc {
+      font-size: 11px;
+      opacity: 0.85;
+      margin-top: 2px;
+    }
+    .arbda-t0 .arbda-value { color: #33c3ff; }
+    .arbda-t1 .arbda-value { color: #4caf50; }
+    .arbda-t2 .arbda-value { color: #ffc107; }
+    .arbda-t3 .arbda-value { color: #ff5252; }
+
     @media (max-width: 960px) {
       .layout {
         flex-direction: column;
@@ -256,11 +303,28 @@
         </select>
       </div>
 
-      <div id="summary" style="margin-top:8px;" class="small-text">
+      <!-- ARBDA SCORE CARD -->
+      <div id="arbdaScoreCard" class="arbda-card">
+        <div class="arbda-label">ARBDA score</div>
+        <div id="arbdaScoreValue" class="arbda-value">–</div>
+        <div id="arbdaScoreDesc" class="arbda-desc">
+          Run the Tag Engine to see the worst-tier ARBDA classification for this transaction.
+        </div>
+      </div>
+
+      <!-- Summary -->
+      <div id="summary" style="margin-top:8px;" class="summary-box">
         No classification yet. Build or paste a transaction and run the Tag Engine.
       </div>
 
-      <div class="panel-subtitle" style="margin-top:8px;">Tags</div>
+      <!-- Breakdown -->
+      <div class="panel-subtitle" style="margin-top:8px;">Output / Region breakdown</div>
+      <div id="breakdownList" class="tag-list" style="margin-bottom:6px;">
+No breakdown yet. Run the Tag Engine to see per-output labels and tiers.
+      </div>
+
+      <!-- Raw tag list -->
+      <div class="panel-subtitle" style="margin-top:4px;">Raw tags</div>
       <div id="tagList" class="tag-list">
 No tags yet. Build or paste a transaction and click "Run Tag Engine".
       </div>
@@ -269,7 +333,6 @@ No tags yet. Build or paste a transaction and click "Run Tag Engine".
 
   <div class="footer-note">
     Tag Engine: OP_RETURN / P2PKH / witness blob-size heuristic. Non-consensus, reference only.
-    ARBDA: if any T3 data is present, the transaction is treated as ARBDA = T3.
   </div>
 
   <script src="buds-tag-engine.js"></script>
@@ -384,8 +447,18 @@ No tags yet. Build or paste a transaction and click "Run Tag Engine".
       document.getElementById("outputs").innerHTML = "";
       document.getElementById("witness").innerHTML = "";
       document.getElementById("jsonInput").value = "";
-      document.getElementById("tagList").textContent = 'No tags yet. Build or paste a transaction and click "Run Tag Engine".';
-      document.getElementById("summary").innerHTML = "No classification yet. Build or paste a transaction and run the Tag Engine.";
+      document.getElementById("tagList").textContent =
+        'No tags yet. Build or paste a transaction and click "Run Tag Engine".';
+      document.getElementById("breakdownList").textContent =
+        'No breakdown yet. Run the Tag Engine to see per-output labels and tiers.';
+      document.getElementById("summary").innerHTML =
+        "No classification yet. Build or paste a transaction and run the Tag Engine.";
+      // reset ARBDA card
+      const card = document.getElementById("arbdaScoreCard");
+      card.classList.remove("arbda-t0", "arbda-t1", "arbda-t2", "arbda-t3");
+      document.getElementById("arbdaScoreValue").textContent = "–";
+      document.getElementById("arbdaScoreDesc").textContent =
+        "Run the Tag Engine to see the worst-tier ARBDA classification for this transaction.";
       lastResult = null;
     }
 
@@ -487,6 +560,7 @@ No tags yet. Build or paste a transaction and click "Run Tag Engine".
 
       lastResult = { tx, classification, tiers, policy, profile, arbdaTier };
 
+      // --- raw tag list ---
       const tagLines = classification.tags.map(tag => {
         const labelsStr = tag.labels.join(",");
         return `surface=${tag.surface}  range=[${tag.start},${tag.end})  labels=[${labelsStr}]`;
@@ -494,6 +568,29 @@ No tags yet. Build or paste a transaction and click "Run Tag Engine".
       document.getElementById("tagList").textContent =
         tagLines.length ? tagLines.join("\n") : "No tags produced.";
 
+      // --- per-output / region breakdown ---
+      const breakdownLines = [];
+      (classification.tags || []).forEach(tag => {
+        const labels = tag.labels.join(", ");
+        let region = tag.surface;
+        if (tag.surface.startsWith("scriptpubkey[")) {
+          const m = tag.surface.match(/scriptpubkey\[(\d+)\]/);
+          if (m) region = `Output #${m[1]}`;
+        } else if (tag.surface.startsWith("witness.stack[")) {
+          const m = tag.surface.match(/witness\.stack\[(\d+):(\d+)\]/);
+          if (m) region = `Witness[${m[1]}:${m[2]}]`;
+        }
+        let tier = "T3";
+        if (tag.labels && tag.labels.length > 0) {
+          tier = engine.getTierForLabel(tag.labels[0]);
+        }
+        breakdownLines.push(`${region} → ${labels} (${tier})`);
+      });
+      document.getElementById("breakdownList").textContent =
+        breakdownLines.length ? breakdownLines.join("\n") :
+        "No breakdown yet. Run the Tag Engine to see per-output labels and tiers.";
+
+      // --- classification summary + policy ---
       const allLabels = new Set();
       classification.tags.forEach(t => t.labels.forEach(l => allLabels.add(l)));
       let labelsHtml = "";
@@ -504,26 +601,44 @@ No tags yet. Build or paste a transaction and click "Run Tag Engine".
       const tiersStr = tiers.tiersPresent.length ? tiers.tiersPresent.join(", ") : "none";
 
       const summaryHtml = `
-        <div class="small-text">Classification summary</div>
-        <div style="margin:4px 0 4px 0;">${labelsHtml || "<em>No labels</em>"}</div>
-        <div class="small-text">Triage tiers present: ${tiersStr}</div>
-        <div class="small-text">
-          ARBDA transaction tier: <strong>${arbdaTier}</strong>
-          (T3 dominates if any unknown/obfuscated data is present).
+        <div class="summary-card">
+          <div class="summary-heading">Classification summary</div>
+          <div style="margin-bottom:4px;">${labelsHtml || "<em>No labels</em>"}</div>
+          <div class="small-text">Triage tiers present: ${tiersStr}</div>
         </div>
-        <div class="small-text" style="margin-bottom:4px;">
-          T0 = consensus, T1 = economic, T2 = metadata, T3 = unknown/obfuscated.
-        </div>
-        <div class="small-text">Example policy (profile: <strong>${profile}</strong>)</div>
-        <div class="tag-list">
+        <div class="summary-card">
+          <div class="summary-heading">Example policy (profile: <strong>${profile}</strong>)</div>
+          <div class="tag-list" style="margin-top:4px;">
 base mempool min : ${baseMin.toFixed(2)} sat/vB
 tx feerate       : ${txFeerate.toFixed(2)} sat/vB
 min multiplier   : ${policy.mult.toFixed(2)}x
 required feerate : ${policy.required.toFixed(2)} sat/vB
 effective score  : ${policy.score.toFixed(2)} (scaled sat/vB)
+          </div>
+          <div class="small-text" style="margin-top:4px;">
+            T0 = consensus, T1 = economic, T2 = metadata, T3 = unknown/obfuscated.
+          </div>
         </div>
       `;
       document.getElementById("summary").innerHTML = summaryHtml;
+
+      // --- ARBDA card ---
+      const card = document.getElementById("arbdaScoreCard");
+      card.classList.remove("arbda-t0", "arbda-t1", "arbda-t2", "arbda-t3");
+      card.classList.add("arbda-" + arbdaTier.toLowerCase());
+      document.getElementById("arbdaScoreValue").textContent = arbdaTier;
+
+      let desc;
+      if (arbdaTier === "T3") {
+        desc = "Contains unknown or obfuscated data; ARBDA treats this as worst-case.";
+      } else if (arbdaTier === "T2") {
+        desc = "Contains metadata / OP_RETURN-style data but no T3 regions.";
+      } else if (arbdaTier === "T1") {
+        desc = "Economic/payment-style data only (no T2/T3 regions).";
+      } else {
+        desc = "Consensus-only / purely structural data.";
+      }
+      document.getElementById("arbdaScoreDesc").textContent = desc;
     }
 
     function exportJson() {
