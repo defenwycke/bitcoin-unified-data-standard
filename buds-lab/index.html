@@ -119,14 +119,8 @@
       font-size: 10px;
       margin-right: 4px;
       margin-bottom: 2px;
-    }
-    .badge-label {
       background: #222;
       color: #eee;
-    }
-    .badge-tier {
-      background: #333;
-      color: #ffdf5c;
     }
     .small-text {
       font-size: 11px;
@@ -153,11 +147,6 @@
       margin: 0 0 4px 0;
       font-size: 12px;
       color: #eee;
-    }
-    .divider {
-      width: 1px;
-      background: #222;
-      margin: 0 4px;
     }
   </style>
 </head>
@@ -194,7 +183,7 @@
           <div id="outputs"></div>
           <button type="button" onclick="addOutput()">+ Add output</button>
           <div class="small-text" style="margin-top:4px;">
-            OP_RETURN scripts will be tagged as <code>da.op_return_embed</code>. Simple P2PKH templates are tagged as <code>pay.standard</code>.
+            Choose a template (P2PKH / P2WPKH / P2TR / OP_RETURN) or customise ASM + hex.
           </div>
         </div>
 
@@ -225,10 +214,11 @@
     </section>
   </main>
 
+  <script src="buds-tag-engine.js"></script>
   <script>
-    // --- Simple in-browser representation mirroring SimpleTx ---
+    // --- UI helpers to build a SimpleTx-like object ---
 
-    function addOutput(spkAsm = "", spkHex = "") {
+    function addOutput(type = "custom", spkAsm = "", spkHex = "") {
       const container = document.getElementById("outputs");
       const idx = container.children.length;
 
@@ -237,35 +227,62 @@
       wrapper.style.margin = "4px 0";
       wrapper.innerHTML = `
         <div class="row">
-          <label style="flex:0 0 60px;">Output #${idx}</label>
+          <label style="flex:0 0 80px;">Output #${idx}</label>
           <select data-type="spk-type">
             <option value="custom">Custom</option>
-            <option value="p2pkh">P2PKH (template)</option>
+            <option value="p2pkh">P2PKH</option>
+            <option value="p2wpkh">P2WPKH</option>
+            <option value="p2tr">P2TR</option>
             <option value="opreturn">OP_RETURN</option>
           </select>
         </div>
         <div class="row">
-          <label style="flex:0 0 60px;">ASM</label>
-          <input type="text" data-field="asm" placeholder="e.g. OP_DUP OP_HASH160 ..." value="${spkAsm}" />
+          <label style="flex:0 0 80px;">ASM</label>
+          <input type="text" data-field="asm" placeholder="e.g. OP_DUP OP_HASH160 ..." />
         </div>
         <div class="row">
-          <label style="flex:0 0 60px;">Hex</label>
-          <input type="text" data-field="hex" placeholder="raw scriptPubKey hex" value="${spkHex}" />
+          <label style="flex:0 0 80px;">Hex</label>
+          <input type="text" data-field="hex" placeholder="raw scriptPubKey hex" />
         </div>
       `;
       container.appendChild(wrapper);
 
       const typeSelect = wrapper.querySelector('select[data-type="spk-type"]');
-      typeSelect.addEventListener("change", () => {
-        const asmInput = wrapper.querySelector('input[data-field="asm"]');
-        const hexInput = wrapper.querySelector('input[data-field="hex"]');
-        if (typeSelect.value === "p2pkh") {
+      const asmInput = wrapper.querySelector('input[data-field="asm"]');
+      const hexInput = wrapper.querySelector('input[data-field="hex"]');
+
+      function applyTemplate(t) {
+        if (t === "p2pkh") {
           asmInput.value = "OP_DUP OP_HASH160 <pubkeyhash> OP_EQUALVERIFY OP_CHECKSIG";
           hexInput.value = "76a91400112233445566778899aabbccddeeff0011223388ac";
-        } else if (typeSelect.value === "opreturn") {
+        } else if (t === "p2wpkh") {
+          asmInput.value = "0 <20-byte-pubkeyhash>";
+          hexInput.value = "001400112233445566778899aabbccddeeff00112233";
+        } else if (t === "p2tr") {
+          asmInput.value = "1 <32-byte-xonly-pubkey>";
+          hexInput.value = "5120" + "11".repeat(32);
+        } else if (t === "opreturn") {
           asmInput.value = "OP_RETURN 6f6b";
           hexInput.value = "6a026f6b";
+        } else {
+          if (!spkAsm && !spkHex) {
+            asmInput.value = "";
+            hexInput.value = "";
+          }
+          return;
         }
+      }
+
+      typeSelect.value = type;
+      if (spkAsm || spkHex) {
+        asmInput.value = spkAsm;
+        hexInput.value = spkHex;
+      } else {
+        applyTemplate(type);
+      }
+
+      typeSelect.addEventListener("change", () => {
+        applyTemplate(typeSelect.value);
       });
     }
 
@@ -286,159 +303,38 @@
       document.getElementById("txid").value = "";
       document.getElementById("outputs").innerHTML = "";
       document.getElementById("witness").innerHTML = "";
-      document.getElementById("tagList").textContent = "No tags yet. Build a transaction and click \"Run Tag Engine\".";
+      document.getElementById("tagList").textContent = 'No tags yet. Build a transaction and click "Run Tag Engine".';
       document.getElementById("summary").innerHTML = "";
     }
 
     function loadExampleTx() {
       clearTx();
       document.getElementById("txid").value = "deadbeefcafebabe0011223344556677";
-      addOutput(
-        "OP_DUP OP_HASH160 <pubkeyhash> OP_EQUALVERIFY OP_CHECKSIG",
-        "76a91400112233445566778899aabbccddeeff0011223388ac"
-      );
-      addOutput(
-        "OP_RETURN 6f6b",
-        "6a026f6b"
-      );
+      addOutput("p2pkh");
+      addOutput("opreturn");
       // large witness blob (600 bytes)
       let bigHex = "";
       for (let i = 0; i < 600; i++) bigHex += "00";
       addWitnessItem(bigHex);
     }
 
-    // --- Tag Engine logic (JS mirror of C++ Tagger + PolicyExample) ---
-
-    function hexByteLen(hex) {
-      return Math.floor(hex.length / 2);
-    }
-
-    function hexStartsWith(hex, prefix) {
-      return hex.toLowerCase().startsWith(prefix.toLowerCase());
-    }
-
-    function hexEndsWith(hex, suffix) {
-      return hex.toLowerCase().endsWith(suffix.toLowerCase());
-    }
-
-    function isLikelyOpReturn(spk) {
-      if (spk.asm && spk.asm.startsWith("OP_RETURN")) return true;
-      if (hexStartsWith(spk.hex || "", "6a")) return true;
-      return false;
-    }
-
-    function isLikelyP2PKH(spk) {
-      if (!spk.hex) return false;
-      if (spk.hex.length !== 50) return false; // 25 bytes
-      if (!hexStartsWith(spk.hex, "76a914")) return false;
-      if (!hexEndsWith(spk.hex, "88ac")) return false;
-      return true;
-    }
-
-    function classifyTx(tx) {
-      const tags = [];
-
-      // scriptPubKey surfaces
-      tx.vout.forEach((out, idx) => {
-        const spk = out.scriptPubKey;
-        const surface = `scriptpubkey[${idx}]`;
-        const byteLen = hexByteLen(spk.hex || "");
-        const labels = [];
-
-        if (isLikelyOpReturn(spk)) {
-          labels.push("da.op_return_embed");
-        } else if (isLikelyP2PKH(spk)) {
-          labels.push("pay.standard");
-        } else {
-          labels.push("pay.standard"); // for now
-        }
-
-        tags.push({
-          surface,
-          start: 0,
-          end: byteLen,
-          labels
-        });
-      });
-
-      // witness surfaces
-      const LARGE_BLOB_THRESHOLD = 512;
-      tx.witness.forEach((wit, vinIdx) => {
-        wit.stack.forEach((itemHex, stackIdx) => {
-          const byteLen = hexByteLen(itemHex || "");
-          const surface = `witness.stack[${vinIdx}:${stackIdx}]`;
-          const labels = [];
-          if (byteLen > LARGE_BLOB_THRESHOLD) {
-            labels.push("da.obfuscated");
-          } else {
-            labels.push("da.unknown");
-          }
-          tags.push({
-            surface,
-            start: 0,
-            end: byteLen,
-            labels
-          });
-        });
-      });
-
-      return { txid: tx.txid, tags };
-    }
-
-    // Example policy (mirrors buds_policy_example)
-    const labelPolicies = {
-      "da.obfuscated": { minMult: 3.0, boost: -0.5 },
-      "da.unknown": { minMult: 2.0, boost: -0.2 },
-      "pay.standard": { minMult: 1.0, boost: 0.0 },
-      "pay.channel_open": { minMult: 1.0, boost: 0.2 }
-    };
-
-    function getPolicyForLabel(label) {
-      return labelPolicies[label] || { minMult: 1.0, boost: 0.0 };
-    }
-
-    function computePolicy(classification, baseMinFeerate, txFeerate) {
-      let mult = 1.0;
-      const seen = new Set();
-      let boostSum = 0.0;
-
-      classification.tags.forEach(tag => {
-        tag.labels.forEach(label => {
-          const p = getPolicyForLabel(label);
-          mult = Math.max(mult, p.minMult);
-          if (!seen.has(label)) {
-            seen.add(label);
-            boostSum += p.boost;
-          }
-        });
-      });
-
-      boostSum = Math.max(-0.9, Math.min(boostSum, 1.0));
-      const required = baseMinFeerate * mult;
-      const score = txFeerate * (1 + boostSum);
-      return { required, score, mult, boostSum };
-    }
-
     function runTagEngine() {
-      // Build tx object from DOM
       const txid = document.getElementById("txid").value || "<no-txid>";
 
       const outputs = [];
-      document.querySelectorAll("#outputs > .tx-section").forEach((wrapper) => {
+      document.querySelectorAll("#outputs > .tx-section").forEach(wrapper => {
         const asm = wrapper.querySelector('input[data-field="asm"]').value.trim();
         const hex = wrapper.querySelector('input[data-field="hex"]').value.trim();
-        outputs.push({
-          scriptPubKey: { asm, hex }
-        });
+        if (asm || hex) {
+          outputs.push({ scriptPubKey: { asm, hex } });
+        }
       });
 
       const witness = [];
       const witItems = [];
-      document.querySelectorAll('input[data-field="witness-hex"]').forEach((input) => {
+      document.querySelectorAll('input[data-field="witness-hex"]').forEach(input => {
         const hex = input.value.trim();
-        if (hex.length > 0) {
-          witItems.push(hex);
-        }
+        if (hex.length > 0) witItems.push(hex);
       });
       if (witItems.length > 0) {
         witness.push({ stack: witItems });
@@ -446,27 +342,26 @@
 
       const tx = { txid, vout: outputs, witness };
 
-      const classification = classifyTx(tx);
-      const baseMin = 1.0;
-      const txFeerate = 5.0; // demo constant, could be user input later
-      const policy = computePolicy(classification, baseMin, txFeerate);
+      const engine = new BudsTagEngine();
+      const classification = engine.classify(tx);
 
-      // Render tags
+      // Demo policy (like C++)
+      const baseMin = 1.0;
+      const txFeerate = 5.0;
+      const policy = engine.computePolicy(classification, baseMin, txFeerate);
+
       const tagLines = classification.tags.map(tag => {
         const labelsStr = tag.labels.join(",");
         return `surface=${tag.surface}  range=[${tag.start},${tag.end})  labels=[${labelsStr}]`;
       });
-
       document.getElementById("tagList").textContent =
         tagLines.length ? tagLines.join("\n") : "No tags produced.";
 
-      // Render summary
       const allLabels = new Set();
       classification.tags.forEach(t => t.labels.forEach(l => allLabels.add(l)));
-
       let labelsHtml = "";
       allLabels.forEach(label => {
-        labelsHtml += `<span class="badge badge-label">${label}</span>`;
+        labelsHtml += `<span class="badge">${label}</span>`;
       });
 
       const summaryHtml = `
