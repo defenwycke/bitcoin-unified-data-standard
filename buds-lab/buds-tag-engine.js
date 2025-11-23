@@ -3,12 +3,19 @@
 // Mirrors the C++ Tagger + PolicyExample at a high level.
 
 class BudsTagEngine {
-  constructor() {
+  constructor(policyProfile = "neutral") {
     this.largeBlobThreshold = 512; // bytes
+    this.policyProfile = policyProfile;
   }
 
+  setPolicyProfile(profile) {
+    this.policyProfile = profile || "neutral";
+  }
+
+  // --- small helpers ---
+
   hexByteLen(hex) {
-    return Math.floor((hex || "").length / 2);
+    return Math.floor(((hex || "").length) / 2);
   }
 
   hexStartsWith(hex, prefix) {
@@ -21,6 +28,8 @@ class BudsTagEngine {
     if (hex.length < suffix.length) return false;
     return hex.slice(-suffix.length) === suffix;
   }
+
+  // --- script recognition ---
 
   isLikelyOpReturn(spk) {
     if (spk.asm && spk.asm.startsWith("OP_RETURN")) return true;
@@ -36,7 +45,9 @@ class BudsTagEngine {
     return true;
   }
 
-  // TODO: add P2WPKH, P2TR, multisig detection later if you want
+  // TODO: add P2WPKH / P2TR / multisig detection if needed later
+
+  // --- main classification ---
 
   classify(tx) {
     const tags = [];
@@ -53,7 +64,8 @@ class BudsTagEngine {
       } else if (this.isLikelyP2PKH(spk)) {
         labels.push("pay.standard");
       } else {
-        labels.push("pay.standard"); // future: expand patterns
+        // Future: detect P2WPKH, P2TR, multisig, etc.
+        labels.push("pay.standard");
       }
 
       tags.push({
@@ -87,14 +99,98 @@ class BudsTagEngine {
     return { txid: tx.txid || "<no-txid>", tags };
   }
 
-  // Example policy model (non-normative)
-  getPolicyForLabel(label) {
-    const table = {
+  // --- triage tiers T0–T3 ---
+
+  /**
+   * Map a label to conceptual tiers:
+   *  T0 – consensus / validation-critical
+   *  T1 – economic / Bitcoin-critical (payments, commitments, contracts)
+   *  T2 – metadata / hints / optional but often useful
+   *  T3 – unknown / obfuscated / likely spam
+   */
+  getTierForLabel(label) {
+    if (!label) return "T3";
+
+    if (label.startsWith("consensus.")) return "T0";
+
+    if (
+      label.startsWith("pay.") ||
+      label.startsWith("commitment.") ||
+      label.startsWith("contracts.")
+    ) {
+      return "T1";
+    }
+
+    if (
+      label.startsWith("meta.") ||
+      label === "da.op_return_embed"
+    ) {
+      return "T2";
+    }
+
+    // anything unknown / obfuscated / vendor / da.* default to T3
+    return "T3";
+  }
+
+  summarizeTiers(classification) {
+    const tiersPresent = new Set();
+    const counts = { T0: 0, T1: 0, T2: 0, T3: 0 };
+
+    (classification.tags || []).forEach(tag => {
+      (tag.labels || []).forEach(label => {
+        const tier = this.getTierForLabel(label);
+        tiersPresent.add(tier);
+        if (counts[tier] !== undefined) counts[tier] += 1;
+      });
+    });
+
+    return {
+      tiersPresent: Array.from(tiersPresent).sort(),
+      counts
+    };
+  }
+
+  // --- policy model ---
+
+  getPolicyTableForProfile() {
+    // You can tune these to simulate different node policies.
+    // neutral  – demo defaults (mild penalties)
+    // strict   – heavier penalties for T3 data
+    // permissive – almost no penalties
+    const profile = this.policyProfile || "neutral";
+
+    if (profile === "strict") {
+      return {
+        "da.obfuscated": { minMult: 4.0, boost: -0.7 },
+        "da.unknown": { minMult: 3.0, boost: -0.4 },
+        "da.op_return_embed": { minMult: 2.0, boost: -0.2 },
+        "pay.standard": { minMult: 1.0, boost: 0.0 },
+        "pay.channel_open": { minMult: 1.0, boost: 0.2 }
+      };
+    }
+
+    if (profile === "permissive") {
+      return {
+        "da.obfuscated": { minMult: 2.0, boost: -0.3 },
+        "da.unknown": { minMult: 1.5, boost: -0.1 },
+        "da.op_return_embed": { minMult: 1.2, boost: -0.05 },
+        "pay.standard": { minMult: 1.0, boost: 0.0 },
+        "pay.channel_open": { minMult: 1.0, boost: 0.1 }
+      };
+    }
+
+    // neutral (default)
+    return {
       "da.obfuscated": { minMult: 3.0, boost: -0.5 },
       "da.unknown": { minMult: 2.0, boost: -0.2 },
+      "da.op_return_embed": { minMult: 1.5, boost: -0.1 },
       "pay.standard": { minMult: 1.0, boost: 0.0 },
       "pay.channel_open": { minMult: 1.0, boost: 0.2 }
     };
+  }
+
+  getPolicyForLabel(label) {
+    const table = this.getPolicyTableForProfile();
     return table[label] || { minMult: 1.0, boost: 0.0 };
   }
 
@@ -117,6 +213,7 @@ class BudsTagEngine {
     boostSum = Math.max(-0.9, Math.min(boostSum, 1.0));
     const required = baseMinFeerate * mult;
     const score = txFeerate * (1 + boostSum);
+
     return { required, score, mult, boostSum };
   }
 }
