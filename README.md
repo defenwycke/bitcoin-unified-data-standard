@@ -51,6 +51,12 @@ No consensus changes. No required policies.
 
 ---
 
+## Reference Implementation
+
+See the [Demo CLI instructions](docs/demo-cli.md) for build/run details.
+
+---
+
 ## License
 
 MIT unless otherwise noted.
