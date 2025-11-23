@@ -23,7 +23,7 @@ From the repository root:
 
 ```
 g++ -std=c++17 -Isrc \
-    src/main_demo_cli.cpp \
+    src/buds_demo.cpp \
     src/buds_labels.cpp \
     src/buds_tagging.cpp \
     src/buds_policy_example.cpp \
