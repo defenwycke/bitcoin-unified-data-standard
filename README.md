@@ -53,6 +53,17 @@ No consensus changes. No required policies.
 
 ## Reference Implementation
 
+A minimal C++ reference implementation is included under `src/`:
+
+- `buds_labels.*` – in-memory view of the BUDS registry
+- `buds_tagging.*` – example transaction classifier and tagger
+- `buds_policy_example.*` – example local policy hooks
+
+Two small binaries are provided:
+
+- `buds-demo` – simple demo that always runs a built-in example transaction
+- `buds-cli` – small CLI wrapper with `help` / `example` commands
+
 See the [Demo CLI instructions](docs/demo-cli.md) for build/run details.
 
 ---
