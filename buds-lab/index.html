@@ -1,0 +1,491 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>BUDS LAB – Tag Engine Playground</title>
+  <style>
+    body {
+      font-family: system-ui, sans-serif;
+      margin: 0;
+      padding: 0;
+      background: #0b0b0b;
+      color: #f5f5f5;
+    }
+    header {
+      padding: 16px 24px;
+      border-bottom: 1px solid #222;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      background: #111;
+    }
+    header h1 {
+      margin: 0;
+      font-size: 20px;
+    }
+    header span {
+      font-size: 12px;
+      color: #aaa;
+    }
+    main {
+      display: flex;
+      gap: 16px;
+      padding: 16px;
+      box-sizing: border-box;
+      height: calc(100vh - 64px);
+    }
+    .panel {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      border-radius: 8px;
+      border: 1px solid #222;
+      background: #121212;
+      overflow: hidden;
+    }
+    .panel-header {
+      padding: 8px 12px;
+      border-bottom: 1px solid #222;
+      font-size: 13px;
+      font-weight: 600;
+      background: #181818;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .panel-body {
+      padding: 12px;
+      overflow: auto;
+      font-size: 13px;
+    }
+    .row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 8px;
+    }
+    label {
+      font-size: 12px;
+      color: #ccc;
+    }
+    input[type="text"], textarea, select {
+      background: #111;
+      color: #f5f5f5;
+      border: 1px solid #333;
+      border-radius: 4px;
+      padding: 4px 6px;
+      font-family: inherit;
+      font-size: 12px;
+      width: 100%;
+      box-sizing: border-box;
+    }
+    textarea {
+      resize: vertical;
+      min-height: 80px;
+    }
+    button {
+      background: #ff6a00;
+      color: #000;
+      border: none;
+      border-radius: 4px;
+      padding: 6px 10px;
+      font-size: 12px;
+      cursor: pointer;
+      font-weight: 600;
+    }
+    button:hover {
+      background: #ffa733;
+    }
+    .btn-secondary {
+      background: #222;
+      color: #ddd;
+      border: 1px solid #333;
+    }
+    .btn-secondary:hover {
+      background: #333;
+    }
+    .tag-list {
+      font-family: monospace;
+      white-space: pre;
+      background: #101010;
+      padding: 8px;
+      border-radius: 4px;
+      border: 1px solid #222;
+    }
+    .badge {
+      display: inline-block;
+      padding: 2px 6px;
+      border-radius: 999px;
+      font-size: 10px;
+      margin-right: 4px;
+      margin-bottom: 2px;
+    }
+    .badge-label {
+      background: #222;
+      color: #eee;
+    }
+    .badge-tier {
+      background: #333;
+      color: #ffdf5c;
+    }
+    .small-text {
+      font-size: 11px;
+      color: #aaa;
+    }
+    .pill-row {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      margin-bottom: 8px;
+    }
+    .pill-row button {
+      padding: 4px 8px;
+      font-size: 11px;
+    }
+    .tx-section {
+      border: 1px solid #222;
+      border-radius: 4px;
+      margin-bottom: 8px;
+      padding: 8px;
+      background: #141414;
+    }
+    .tx-section h4 {
+      margin: 0 0 4px 0;
+      font-size: 12px;
+      color: #eee;
+    }
+    .divider {
+      width: 1px;
+      background: #222;
+      margin: 0 4px;
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div>
+      <h1>BUDS LAB</h1>
+      <span>Bitcoin Unified Data Standard – Tag Engine Playground</span>
+    </div>
+    <div class="small-text">
+      Tag Engine: OP_RETURN / P2PKH / blob-size heuristic<br/>
+      Non-consensus, reference only.
+    </div>
+  </header>
+
+  <main>
+    <!-- LEFT: TX builder -->
+    <section class="panel">
+      <div class="panel-header">
+        <span>Transaction Builder</span>
+        <div class="pill-row">
+          <button class="btn-secondary" type="button" onclick="loadExampleTx()">Load example</button>
+          <button class="btn-secondary" type="button" onclick="clearTx()">Clear</button>
+        </div>
+      </div>
+      <div class="panel-body">
+        <div class="row">
+          <label style="flex:0 0 80px;">TXID</label>
+          <input type="text" id="txid" placeholder="deadbeef..." />
+        </div>
+
+        <div class="tx-section">
+          <h4>Outputs (scriptPubKey)</h4>
+          <div id="outputs"></div>
+          <button type="button" onclick="addOutput()">+ Add output</button>
+          <div class="small-text" style="margin-top:4px;">
+            OP_RETURN scripts will be tagged as <code>da.op_return_embed</code>. Simple P2PKH templates are tagged as <code>pay.standard</code>.
+          </div>
+        </div>
+
+        <div class="tx-section">
+          <h4>Witness (stack items)</h4>
+          <div id="witness"></div>
+          <button type="button" onclick="addWitnessItem()">+ Add witness item</button>
+          <div class="small-text" style="margin-top:4px;">
+            Large blobs (&gt;512 bytes) are tagged as <code>da.obfuscated</code>, smaller items as <code>da.unknown</code>.
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- RIGHT: Tag Engine output -->
+    <section class="panel">
+      <div class="panel-header">
+        <span>BUDS Tag Engine Output</span>
+        <button type="button" onclick="runTagEngine()">Run Tag Engine</button>
+      </div>
+      <div class="panel-body">
+        <div id="summary"></div>
+        <div style="margin-top:8px;">
+          <div class="small-text">Tags</div>
+          <div id="tagList" class="tag-list">No tags yet. Build a transaction and click "Run Tag Engine".</div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <script>
+    // --- Simple in-browser representation mirroring SimpleTx ---
+
+    function addOutput(spkAsm = "", spkHex = "") {
+      const container = document.getElementById("outputs");
+      const idx = container.children.length;
+
+      const wrapper = document.createElement("div");
+      wrapper.className = "tx-section";
+      wrapper.style.margin = "4px 0";
+      wrapper.innerHTML = `
+        <div class="row">
+          <label style="flex:0 0 60px;">Output #${idx}</label>
+          <select data-type="spk-type">
+            <option value="custom">Custom</option>
+            <option value="p2pkh">P2PKH (template)</option>
+            <option value="opreturn">OP_RETURN</option>
+          </select>
+        </div>
+        <div class="row">
+          <label style="flex:0 0 60px;">ASM</label>
+          <input type="text" data-field="asm" placeholder="e.g. OP_DUP OP_HASH160 ..." value="${spkAsm}" />
+        </div>
+        <div class="row">
+          <label style="flex:0 0 60px;">Hex</label>
+          <input type="text" data-field="hex" placeholder="raw scriptPubKey hex" value="${spkHex}" />
+        </div>
+      `;
+      container.appendChild(wrapper);
+
+      const typeSelect = wrapper.querySelector('select[data-type="spk-type"]');
+      typeSelect.addEventListener("change", () => {
+        const asmInput = wrapper.querySelector('input[data-field="asm"]');
+        const hexInput = wrapper.querySelector('input[data-field="hex"]');
+        if (typeSelect.value === "p2pkh") {
+          asmInput.value = "OP_DUP OP_HASH160 <pubkeyhash> OP_EQUALVERIFY OP_CHECKSIG";
+          hexInput.value = "76a91400112233445566778899aabbccddeeff0011223388ac";
+        } else if (typeSelect.value === "opreturn") {
+          asmInput.value = "OP_RETURN 6f6b";
+          hexInput.value = "6a026f6b";
+        }
+      });
+    }
+
+    function addWitnessItem(hex = "") {
+      const container = document.getElementById("witness");
+      const idx = container.children.length;
+
+      const wrapper = document.createElement("div");
+      wrapper.className = "row";
+      wrapper.innerHTML = `
+        <label style="flex:0 0 80px;">Item #${idx}</label>
+        <input type="text" data-field="witness-hex" placeholder="hex-encoded witness item" value="${hex}" />
+      `;
+      container.appendChild(wrapper);
+    }
+
+    function clearTx() {
+      document.getElementById("txid").value = "";
+      document.getElementById("outputs").innerHTML = "";
+      document.getElementById("witness").innerHTML = "";
+      document.getElementById("tagList").textContent = "No tags yet. Build a transaction and click \"Run Tag Engine\".";
+      document.getElementById("summary").innerHTML = "";
+    }
+
+    function loadExampleTx() {
+      clearTx();
+      document.getElementById("txid").value = "deadbeefcafebabe0011223344556677";
+      addOutput(
+        "OP_DUP OP_HASH160 <pubkeyhash> OP_EQUALVERIFY OP_CHECKSIG",
+        "76a91400112233445566778899aabbccddeeff0011223388ac"
+      );
+      addOutput(
+        "OP_RETURN 6f6b",
+        "6a026f6b"
+      );
+      // large witness blob (600 bytes)
+      let bigHex = "";
+      for (let i = 0; i < 600; i++) bigHex += "00";
+      addWitnessItem(bigHex);
+    }
+
+    // --- Tag Engine logic (JS mirror of C++ Tagger + PolicyExample) ---
+
+    function hexByteLen(hex) {
+      return Math.floor(hex.length / 2);
+    }
+
+    function hexStartsWith(hex, prefix) {
+      return hex.toLowerCase().startsWith(prefix.toLowerCase());
+    }
+
+    function hexEndsWith(hex, suffix) {
+      return hex.toLowerCase().endsWith(suffix.toLowerCase());
+    }
+
+    function isLikelyOpReturn(spk) {
+      if (spk.asm && spk.asm.startsWith("OP_RETURN")) return true;
+      if (hexStartsWith(spk.hex || "", "6a")) return true;
+      return false;
+    }
+
+    function isLikelyP2PKH(spk) {
+      if (!spk.hex) return false;
+      if (spk.hex.length !== 50) return false; // 25 bytes
+      if (!hexStartsWith(spk.hex, "76a914")) return false;
+      if (!hexEndsWith(spk.hex, "88ac")) return false;
+      return true;
+    }
+
+    function classifyTx(tx) {
+      const tags = [];
+
+      // scriptPubKey surfaces
+      tx.vout.forEach((out, idx) => {
+        const spk = out.scriptPubKey;
+        const surface = `scriptpubkey[${idx}]`;
+        const byteLen = hexByteLen(spk.hex || "");
+        const labels = [];
+
+        if (isLikelyOpReturn(spk)) {
+          labels.push("da.op_return_embed");
+        } else if (isLikelyP2PKH(spk)) {
+          labels.push("pay.standard");
+        } else {
+          labels.push("pay.standard"); // for now
+        }
+
+        tags.push({
+          surface,
+          start: 0,
+          end: byteLen,
+          labels
+        });
+      });
+
+      // witness surfaces
+      const LARGE_BLOB_THRESHOLD = 512;
+      tx.witness.forEach((wit, vinIdx) => {
+        wit.stack.forEach((itemHex, stackIdx) => {
+          const byteLen = hexByteLen(itemHex || "");
+          const surface = `witness.stack[${vinIdx}:${stackIdx}]`;
+          const labels = [];
+          if (byteLen > LARGE_BLOB_THRESHOLD) {
+            labels.push("da.obfuscated");
+          } else {
+            labels.push("da.unknown");
+          }
+          tags.push({
+            surface,
+            start: 0,
+            end: byteLen,
+            labels
+          });
+        });
+      });
+
+      return { txid: tx.txid, tags };
+    }
+
+    // Example policy (mirrors buds_policy_example)
+    const labelPolicies = {
+      "da.obfuscated": { minMult: 3.0, boost: -0.5 },
+      "da.unknown": { minMult: 2.0, boost: -0.2 },
+      "pay.standard": { minMult: 1.0, boost: 0.0 },
+      "pay.channel_open": { minMult: 1.0, boost: 0.2 }
+    };
+
+    function getPolicyForLabel(label) {
+      return labelPolicies[label] || { minMult: 1.0, boost: 0.0 };
+    }
+
+    function computePolicy(classification, baseMinFeerate, txFeerate) {
+      let mult = 1.0;
+      const seen = new Set();
+      let boostSum = 0.0;
+
+      classification.tags.forEach(tag => {
+        tag.labels.forEach(label => {
+          const p = getPolicyForLabel(label);
+          mult = Math.max(mult, p.minMult);
+          if (!seen.has(label)) {
+            seen.add(label);
+            boostSum += p.boost;
+          }
+        });
+      });
+
+      boostSum = Math.max(-0.9, Math.min(boostSum, 1.0));
+      const required = baseMinFeerate * mult;
+      const score = txFeerate * (1 + boostSum);
+      return { required, score, mult, boostSum };
+    }
+
+    function runTagEngine() {
+      // Build tx object from DOM
+      const txid = document.getElementById("txid").value || "<no-txid>";
+
+      const outputs = [];
+      document.querySelectorAll("#outputs > .tx-section").forEach((wrapper) => {
+        const asm = wrapper.querySelector('input[data-field="asm"]').value.trim();
+        const hex = wrapper.querySelector('input[data-field="hex"]').value.trim();
+        outputs.push({
+          scriptPubKey: { asm, hex }
+        });
+      });
+
+      const witness = [];
+      const witItems = [];
+      document.querySelectorAll('input[data-field="witness-hex"]').forEach((input) => {
+        const hex = input.value.trim();
+        if (hex.length > 0) {
+          witItems.push(hex);
+        }
+      });
+      if (witItems.length > 0) {
+        witness.push({ stack: witItems });
+      }
+
+      const tx = { txid, vout: outputs, witness };
+
+      const classification = classifyTx(tx);
+      const baseMin = 1.0;
+      const txFeerate = 5.0; // demo constant, could be user input later
+      const policy = computePolicy(classification, baseMin, txFeerate);
+
+      // Render tags
+      const tagLines = classification.tags.map(tag => {
+        const labelsStr = tag.labels.join(",");
+        return `surface=${tag.surface}  range=[${tag.start},${tag.end})  labels=[${labelsStr}]`;
+      });
+
+      document.getElementById("tagList").textContent =
+        tagLines.length ? tagLines.join("\n") : "No tags produced.";
+
+      // Render summary
+      const allLabels = new Set();
+      classification.tags.forEach(t => t.labels.forEach(l => allLabels.add(l)));
+
+      let labelsHtml = "";
+      allLabels.forEach(label => {
+        labelsHtml += `<span class="badge badge-label">${label}</span>`;
+      });
+
+      const summaryHtml = `
+        <div class="small-text">Classification summary</div>
+        <div style="margin:4px 0 8px 0;">${labelsHtml || "<em>No labels</em>"}</div>
+        <div class="small-text">Example policy (non-normative)</div>
+        <div class="tag-list">
+base mempool min : ${baseMin.toFixed(2)} sat/vB
+tx feerate       : ${txFeerate.toFixed(2)} sat/vB
+min multiplier   : ${policy.mult.toFixed(2)}x
+required feerate : ${policy.required.toFixed(2)} sat/vB
+effective score  : ${policy.score.toFixed(2)} (scaled sat/vB)
+        </div>
+      `;
+      document.getElementById("summary").innerHTML = summaryHtml;
+    }
+
+    // init
+    loadExampleTx();
+  </script>
+</body>
+</html>
