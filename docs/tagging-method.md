@@ -1,203 +1,250 @@
-# Tagging Method (Non-Normative)
+# Tagging Method – BUDS Classification Pipeline
 
-This document describes a simple, optional approach for scanning a Bitcoin
-transaction and assigning BUDS labels to its regions.  
-Implementations may use this method, extend it, or replace it entirely.
+This document describes how a BUDS implementation **scans** a transaction and
+assigns **labels** to data regions.
 
-BUDS does not mandate any tagging logic.
+The goal is:
 
----
+- **Complete coverage** – every relevant region gets at least one label.
+- **Minimal assumptions** – structural rules first, light heuristics second.
+- **Local policy-friendly** – labels and tiers are easy to feed into fee and selection logic.
 
-## 1. Goal
-
-Identify **regions** inside a transaction and assign **labels** that describe the
-data found in those regions.
-
-A region is defined by:
-
-- the surface (e.g., `witness.stack[0]`, `scriptsig`, `scriptpubkey[n]`),
-- a byte range,
-- one or more labels.
-
-Example:
-
-```
-label: da.obfuscated
-surface: witness.stack[1]
-range: 0–2048
-```
-
+This is **non-consensus** and **non-normative**. Different implementations may
+extend this method with additional rules or more advanced heuristics.
 
 ---
 
-## 2. Surfaces to Scan
+## 1. Surfaces and regions
 
-Implementations typically walk these surfaces:
+A BUDS implementation views a transaction as a set of **surfaces**:
 
-- **Input surfaces**
-  - `scriptsig`
-  - `witness.stack[i]`
-  - `witness.script`
+- `scriptpubkey[n]` – the scriptPubKey of output `n`,
+- `scriptsig[n]` – the scriptSig of input `n` (not yet used in the demo engine),
+- `witness.stack[i:j]` – witness stack item `j` for input `i`,
+- `witness.script[i]` – witness script for input `i` (future),
+- dedicated surfaces for new lanes (e.g. `segop[k]`) in extensions.
 
-- **Output surfaces**
-  - `scriptpubkey[n]`
-  - `op_return`
-  - `segop` (if present)
+Within each surface, the classifier may define **regions** with byte ranges:
 
-- **Transaction-level surfaces**
-  - version, locktime, sequence (usually not labelled beyond consensus)
+- `start` – byte offset from the beginning of the surface,
+- `end` – byte offset (exclusive).
 
-Each surface may contain validation data, structured metadata, or arbitrary data.
+The current reference implementations mark the **entire surface** as a single
+region, with:
 
----
-
-## 3. Example Tagging Flow
-
-A simple reference flow is:
-
-### **Step 1 — Identify structural patterns**
-
-Check whether the region matches a known pattern such as:
-
-- standard payments,
-- Lightning channel open templates,
-- tapscript programs,
-- OP_RETURN formats,
-- known inscription / ordinal patterns,
-- mining pool tags,
-- rollup commitments.
-
-When matched, assign the appropriate registry label(s).
-
-Example:
-
-```
-region: scriptpubkey[0]
-pattern: 2-of-2 channel template
-label: pay.channel_open
-```
-
+- `start = 0`
+- `end = length_in_bytes`.
 
 ---
 
-### **Step 2 — Identify consensus-relevant regions**
+## 2. Labels
 
-Regions that parse as:
+Each region receives one or more **labels** from the registry (see
+`registry/registry.json`), for example:
 
-- signatures,
-- public keys,
-- executed script fragments,
-- valid taproot scripts/programs,
-
-may be tagged using consensus-oriented labels such as:
-
-- `consensus.sig`
-- `consensus.script`
-- `consensus.taproot_prog`
-
-This tagging is descriptive only.
-
----
-
-### **Step 3 — Identify metadata / application data**
-
-Regions that contain:
-
-- small intentional payloads,
-- OP_RETURN data,
-- structured messages,
-- indexer hints,
-
-may be labelled:
-
+- `pay.standard`
 - `da.op_return_embed`
-- `meta.inscription`
-- `meta.indexer_hint`
-- `da.embed_misc`
-
-based on context or recognisable structure.
-
----
-
-### **Step 4 — Detect unknown or obfuscated data**
-
-If a region:
-
-- is unusually large,
-- appears opaque or high-entropy,
-- does not match any known structure,
-- is located in a place not typical for validation data (e.g., large witness items),
-- appears to contain application payloads but no identifiable pattern,
-
-implementations may assign a generic label such as:
-
 - `da.unknown`
 - `da.obfuscated`
+- `pay.channel_open`
+- `meta.pool_tag`
+- `commitment.rollup_root`
+- vendor-specific labels, etc.
 
-This is optional and purely heuristic.
-
----
-
-## 4. Multiple Labels per Region
-
-A region may receive more than one label.  
-Example:
-
-```
-labels: ["da.op_return_embed", "meta.inscription_like"]
-surface: scriptpubkey[1]
-```
-
-
-Applications and node policy modules can choose which labels matter.
+Labels are **descriptive only**. They do not imply any global policy.
 
 ---
 
-## 5. Non-Goals
+## 3. Classification pipeline
 
-This method does **not**:
+The recommended pipeline is:
 
-- state what counts as “spam,”  
-- assign tiers automatically,  
-- impose policies,  
-- require protocols to self-identify,  
-- guarantee correct interpretation.
+1. **Structural detection** – recognise obvious patterns by structure.
+2. **Protocol / pattern rules** – optional, pluggable rules for known protocols.
+3. **Heuristics** – simple generic rules (size, entropy, position, etc.).
+4. **Fallback** – if no other rule applies, mark the region as `da.unknown`.
 
-All classification is **local**, and disagreements between nodes are expected.
+Every region must emerge from the pipeline with **at least one label**.
 
----
+### 3.1 Structural detection – scriptPubKey
 
-## 6. Output Format (Example)
+The reference BUDS Tag Engine (browser) applies the following rules to each `scriptpubkey[n]`:
 
-An implementation may return tags in a format similar to:
+1. **OP_RETURN**
+   - If the ASM representation begins with `OP_RETURN`, **or**
+   - the hex begins with `0x6a` (`6a…`),
+   - then the region is labelled:
 
-```json
-[
-  {
-    "surface": "witness.stack[0]",
-    "start": 0,
-    "end": 71,
-    "labels": ["consensus.sig"]
-  },
-  {
-    "surface": "scriptpubkey[1]",
-    "start": 0,
-    "end": 80,
-    "labels": ["da.op_return_embed"]
-  }
-]
+     - `da.op_return_embed`
+
+2. **P2PKH**
+   - If the hex matches the standard P2PKH pattern:
+
+ ```
+     76 a9 14 <20-byte-pubkeyhash> 88 ac
 ```
 
-Output format is not standardised.
-Nodes may expose tags through logs, RPCs, or internal APIs.
+     i.e. total length 25 bytes → 50 hex characters, and:
+
+     - prefix: `76a914`
+     - suffix: `88ac`
+
+   - then the region is labelled:
+
+     - `pay.standard`.
+
+3. **Fallback (other scriptPubKey)**
+   - If no above rule matches, the demo engine currently labels the region as:
+
+     - `pay.standard`.
+
+   - This is intentionally conservative and can be refined:
+     - future implementations may detect P2WPKH, P2TR, multisig templates, vaults, channel opens, etc., and use more specific `pay.*` or `contracts.*` labels.
+
+### 3.2 Structural detection – witness stack
+
+For each `witness.stack[i:j]` region, the demo engine applies a single size heuristic:
+
+- Let `L = length_in_bytes` of the witness item.
+
+- If `L > 512` bytes:
+  - label: `da.obfuscated`.
+
+- Else:
+  - label: `da.unknown`.
+
+The idea:
+
+- large, opaque chunks in witness are likely “data blobs” rather than signatures
+  or small parameters,
+- anything unknown but small is still tracked but less heavily penalised.
+
+Future engines may refine this with:
+
+- entropy checks (e.g. to distinguish structured ASCII from compressed blobs),
+- protocol-specific parsing (e.g. channel state, commitments),
+- or joint reasoning across multiple surfaces.
 
 ---
 
-## 7. Summary
+## 4. Triage tiers (T0–T3)
 
-- Tagging is a local classification step.
-- BUDS only provides the labels and definitions.
-- Implementations may use structural detection, heuristics, or proprietary logic.
-- Tags are descriptive and optional, not authoritative.
+For policy and reasoning, each label is mapped to one of four **tiers**:
 
-For how tags may integrate into node policy, see `policy-interface.md`.
+- **T0 – Consensus / validation-critical**
+  - Data required to validate transactions and blocks.
+  - E.g. `consensus.scriptsig`, `consensus.witness`, etc.
+  - (Currently not emitted by the demo Tag Engine, but reserved in design.)
+
+- **T1 – Economic / Bitcoin-critical**
+  - Data representing actual Bitcoin transfers or economic state:
+    - `pay.*` – payment outputs and channel opens.
+    - `contracts.*` – vaults, contract outputs.
+    - `commitment.*` – rollup roots, channel roots, anchored state.
+  - Nodes are expected to treat T1 as “high priority”.
+
+- **T2 – Metadata / hints / optional**
+  - Application-level or indexer hints, inscriptions, OP_RETURN metadata, etc.
+  - Example:
+    - `meta.*`
+    - `da.op_return_embed`.
+
+- **T3 – Unknown / obfuscated / likely spam**
+  - Any label not clearly mapped to T0–T2:
+    - `da.unknown`
+    - `da.obfuscated`
+    - vendor namespaces without special treatment, etc.
+  - Nodes may choose to:
+    - require higher feerates,
+    - cap total T3 weight in block templates,
+    - or de-prioritise T3 in mempool eviction.
+
+A classifier should provide a **per-transaction tier summary**, e.g.:
+
+```
+tiersPresent = ["T1", "T3"]
+counts = { "T0": 0, "T1": 2, "T2": 0, "T3": 1 }
+```
+
+This makes it easy for node operators and policy engines to see at a glance:
+
+- “Is this mostly money, or mostly junk?”
+
+---
+
+## 5. Example: minimal Tag Engine (browser demo)
+
+The browser-based Tag Engine used in `buds-lab` applies the above rules:
+
+1. For each `scriptpubkey[n]`:
+   - detect OP_RETURN → `da.op_return_embed` (T2),
+   - detect P2PKH → `pay.standard` (T1),
+   - else → `pay.standard` (T1).
+
+2. For each `witness.stack[i:j]`:
+   - `len > 512` bytes → `da.obfuscated` (T3),
+   - else → `da.unknown` (T3).
+
+3. For each label, compute the tier (T0–T3).
+
+4. Produce:
+
+   - a list of tags (`surface`, `start`, `end`, `labels[]`),
+   - a tier summary (`tiersPresent`, per-tier counts).
+
+This is enough to:
+
+- demonstrate BUDS in the browser,
+- drive the example local policy model in BUDS LAB,
+- and act as a reference for other implementations.
+
+---
+
+## 6. Local policy integration (non-normative)
+
+BUDS **does not** define policy. It only provides labels and tiers.
+
+However, typical uses in node policy include:
+
+- **Fee requirements**
+  - T3 labels (e.g. `da.obfuscated`) require higher feerates.
+  - T1/T2 labels may receive neutral or positive treatment.
+
+- **Block template composition**
+  - limit T3 weight to a percentage of the block,
+  - prefer T1/T2 transactions when choosing from the mempool.
+
+- **Mempool admission / eviction**
+  - low-feerate T3 transactions can be deprioritised for relay or evicted earlier.
+
+BUDS LAB implements a small example of this in JavaScript, using:
+
+- per-label minimum multipliers (`minMult`),
+- per-label boosts/penalties (`boost`),
+- a few policy profiles (`neutral`, `strict`, `permissive`).
+
+These examples are **illustrative only** and are not part of the BUDS standard.
+
+---
+
+## 7. Extensibility
+
+The tagging method is designed to evolve without changing consensus:
+
+- **New labels**
+  - can be registered in `registry/registry.json`.
+
+- **New structural rules**
+  - can be added by implementations (e.g. vault templates, channel opens).
+
+- **New heuristics**
+  - can improve classification of unknown data without breaking existing labels.
+
+As long as implementations:
+
+- respect the registry,
+- keep tier mappings coherent,
+- and maintain the principle of “complete coverage, minimal assumptions”,
+
+BUDS remains a stable foundation for local node policy and ecosystem-wide discussion of data types.
+
