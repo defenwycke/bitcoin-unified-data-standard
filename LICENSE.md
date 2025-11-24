@@ -1,7 +1,9 @@
 # File: LICENSE
 # Licensing for BUDS
 
-This repository uses a **dual licensing** model:
+This repository uses a **multi licensing** model:
+
+---
 
 1. **Documentation, specifications, and text** (files under `docs/`, `registry/`, `examples/` and `README.md`):
 
@@ -18,8 +20,10 @@ This repository uses a **dual licensing** model:
    Under the following terms:
 
    - Attribution — You must give appropriate credit, provide a link to the license, and indicate if changes were made.
+  
+---
 
-2. **Reference implementation code** (files under `ref-impl/`):
+2. **Reference implementation code** (files under `ref-impl/ src/ tests/ buds-lab/`):
 
    Licensed under the MIT License:
 
@@ -40,6 +44,12 @@ This repository uses a **dual licensing** model:
    LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
    OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
    SOFTWARE.
+
+3. **BIP License**
+
+   The BIP text in bip/bip-buds.md is licensed under BSD-2-Clause as required by the Bitcoin BIP process.
+
+---
 
 If you contribute to this repository, you agree that your contributions are
 licensed under the same terms.
