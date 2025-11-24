@@ -5,271 +5,332 @@ Status: Draft
 Type: Standards Track  
 Created: 2025-11-23  
 License: BSD-2-Clause
+Repository: https://github.com/defenwycke/bitcoin-unified-data-standard
 
-## Abstract
+# Abstract
 
-This BIP specifies the Bitcoin Unified Data Standard (BUDS), a minimal and
-optional framework for **describing**, **classifying**, and **tagging** the data
-that appears inside Bitcoin transactions.
+This BIP specifies the Bitcoin Unified Data Standard (BUDS), a minimal,
+optional, and non-consensus framework for **describing**, **classifying**, and
+**tagging** the data that appears inside Bitcoin transactions.
 
 BUDS defines:
 
-- a registry of data type labels,
-- a common terminology for transaction regions (“surfaces”),
-- a tagging interface for associating labels with byte ranges.
+- a machine-readable **registry** of data-type labels,
+- common terminology for transaction **surfaces** (scriptSig, witness, scriptPubKey, etc.),
+- a **tagging interface** associating byte-ranges with labels,
+- a simple conceptual categorisation model (T0–T3),
+- an optional **ARBDA** (Arbitrary Data Dominance Assessment) score summarising
+  the worst-case tier present in a transaction.
 
-BUDS does **not** change consensus rules or prescribe node policy.  
-It only provides a shared vocabulary that implementations may use for local
-decisions (mempool, fee scoring, block templates, pruning).
+BUDS does **not** change consensus rules or mandate policy behaviour.  
+It provides a shared vocabulary that implementations may freely adopt for local
+decisions such as mempool policy, fee scoring, block template construction, or
+data retention.
 
 ---
 
-## Motivation
+# Motivation
 
-Bitcoin transactions contain more than payments: signatures, scripts, channel
-state, vaults, rollup roots, inscriptions, pool tags, and arbitrary application
-data.
+Bitcoin transactions carry a wide range of data types:
+
+- signatures and scripts,
+- addresses and public keys,
+- channel state and vault logic,
+- Tapscript programs,
+- rollup commitments,
+- indexer hints and application metadata,
+- OP_RETURN messages,
+- and arbitrary witness blobs.
 
 Today:
 
-- Nodes see all of this as opaque bytes.  
-- No standard exists to describe or classify data types.  
-- Local policies become ad-hoc and brittle.  
-- “Spam” debates lack technical clarity.
+- Nodes treat almost all of this as **opaque bytes**.
+- No standard vocabulary exists for identifying or describing data meaning.
+- Local policies rely on brittle heuristics.
+- Discussions around “spam” lack objective terminology.
 
-BUDS addresses this by defining:
+BUDS introduces **neutral, descriptive metadata** that helps:
 
-- a **registry** of labels for common data types,
-- a simple **classification model** (conceptual tiers),
-- a **tagging interface** to attach labels to regions of a transaction.
-
-This gives node operators and miners a clear, explicit way to understand
-transaction data while keeping all enforcement fully local.
+- structure technical discussions,
+- enable transparent local policies,
+- support advanced tools (indexers, miners, L2 systems, pruning engines),
+- without altering Bitcoin’s consensus behaviour.
 
 ---
 
-## Specification
+# Specification
 
-This section summarises the BUDS standard.  
-See `docs/specification.md` and `registry/registry.json` for full details.
+A full formal specification is provided in:
 
-### Labels
+- `docs/specification.md`  
+- `registry/registry.json`  
 
-A **label** is a canonical string describing a type of data found inside a
-transaction.
+A summary is presented below.
+
+## 1. Labels
+
+A **label** is a canonical string describing a data type or semantic meaning.
 
 Examples:
 
-(consensus)
+**Consensus / structural**  
 
 ```
-consensus.sig  
-consensus.script  
-consensus.taproot_prog  
+consensus.sig
+consensus.script
+consensus.taproot_prog
 ```
 
-(pay and system)
+**Payments / systems** 
 
 ```
-pay.standard  
-pay.channel_open  
-contracts.vault  
-commitment.rollup_root  
-meta.pool_tag  
+pay.standard
+pay.channel_open
+contracts.vault
+commitment.rollup_root
 ```
 
-(metadata)
+**Metadata**  
 
 ```
-meta.inscription  
-meta.ordinal  
-meta.indexer_hint  
-da.op_return_embed  
+meta.inscription
+meta.ordinal
+meta.indexer_hint
+da.op_return_embed
 ```
 
-(unknown / generic)
+**Unknown / generic**  
 
 ```
-da.unknown  
-da.obfuscated  
-da.unregistered_vendor  
+da.unknown
+da.obfuscated
+da.unregistered_vendor
 ```
 
-The authoritative list is stored in `registry/registry.json`.
+Labels describe **intended interpretation**, not a guarantee of truth.
 
-Labels describe **intended meaning**, not guaranteed truth.
+All normative labels live in `registry/registry.json`.
 
 ---
 
-### Regions and Surfaces
+## 2. Surfaces and Regions
 
-A **surface** is a logical location for transaction data:
+A **surface** is a logical location for transaction data, such as:
 
-- scriptsig  
-- witness.stack[i]  
-- witness.script  
-- scriptpubkey[n]  
-- op_return  
-- coinbase  
-- implementation-specific lanes (e.g., segop)
+- `scriptSig`
+- `scriptpubkey[n]`
+- `witness.stack[i]`
+- `witness.script`
+- `op_return`
+- extension lanes
 
-A **region** is a byte range within a surface.
+A **region** is a `[start, end)` byte-range within a surface.
+
+Example:
+
+```
+surface: "scriptpubkey[1]"
+start: 0
+end: 4
+labels: ["da.op_return_embed"]
+```
 
 ---
 
-### Tags
+## 3. Tags
 
-A **tag** associates a region with one or more labels.
+A **tag** attaches one or more labels to a region:
 
 ```
 Tag:
-  surface: string
-  start: integer
-  end: integer
-  labels: [string]
+surface: string
+start: integer
+end: integer
+labels: [string]
 ```
 
-Tags are advisory metadata only.  
-They have no effect on consensus validation and nodes may ignore them.
+Tags are **non-consensus metadata**.  
+Nodes may ignore them or compute them differently.
 
 ---
 
-### Registry
+## 4. Registry Structure
 
-Registry entries define:
+Each entry has:
 
 ```
 {
-  "label": "pay.channel_open",
-  "description": "Lightning or L2 channel establishment.",
-  "surfaces": ["scriptpubkey", "witness_script"],
-  "suggested_category": "T1"
+"label": "pay.channel_open",
+"description": "Lightning or L2 channel establishment.",
+"surfaces": ["scriptpubkey", "witness.script"],
+"suggested_category": "T1"
 }
 ```
 
 Fields:
 
-- `label` (required)  
-- `description`  
-- `surfaces`  
-- `suggested_category` (optional hint)
+- `label` — required  
+- `description` — human-readable  
+- `surfaces` — typical source regions  
+- `suggested_category` — **non-normative** tier hint  
 
-The registry process is defined in `docs/registry-process.md`.
+The registration process is defined in `docs/registry-process.md`.
 
 ---
 
-### Conceptual Categories (T0–T3)
+## 5. Conceptual Categories (T0–T3)
 
-For guidance only, BUDS defines four conceptual tiers:
+BUDS defines four non-binding tier categories:
 
 ```
-T0: consensus-critical  
-T1: economic/system-critical  
-T2: metadata/application  
-T3: unknown/obfuscated  
+T0 — consensus-critical
+T1 — economic/system-critical
+T2 — metadata/application
+T3 — unknown/obfuscated
 ```
 
-These categories are **non-normative**:
-
-- nodes may ignore them,
-- nodes may override them,
-- no behaviour is implied.
+No node is required to use these tiers.
 
 ---
 
-### Classification and Tagging
+## 6. ARBDA Tier (Arbitrary Data Dominance Assessment)
 
-Classification is the local process where a node:
+The **ARBDA** score is an optional, single-value summary:
 
-1. Parses a transaction into regions.  
-2. Uses patterns, heuristics, or private logic to determine meaning.  
-3. Assigns labels to regions.  
-4. Produces tags.
+- ARBDA = the **highest tier present** in any region of the transaction.
 
-BUDS **does not** define any required method.  
-A sample approach is documented in `docs/tagging-method.md`.
+Example:  
+- If a transaction contains both a `pay.standard` region (T1)  
+  and a large opaque witness blob (T3),  
+  → **ARBDA = T3**
 
-Different nodes may classify the same transaction differently.
-
----
-
-### Policy Integration (Optional)
-
-Nodes and miners MAY use tags for:
-
-- mempool admission  
-- fee scoring  
-- block template construction  
-- soft limits  
-- pruning and retention
-
-This BIP defines **no** policy requirements or thresholds.  
-See `docs/policy-interface.md` for optional examples.
+ARBDA provides a **worst-case interpretation** for local policy.
 
 ---
 
-## Rationale
+## 7. Tagging and Classification
 
-Bitcoin already carries diverse data types. Without classification, nodes treat:
+Classification uses the **standard BUDS registry** of labels.  
+Every BUDS implementation MUST use the canonical registry and label definitions.
 
-- a Lightning channel open,  
-- an inscription,  
-- a rollup root,  
-- a pool tag,  
-- and 200 KB of opaque witness data  
+The method used to *detect* which label applies to which region, however, is 
+left fully implementation-defined. Nodes are free to choose their own
+heuristics, pattern-matching rules, or external logic.
 
-as equivalent “bytes”.
+Thus:
 
-BUDS gives the ecosystem:
+- The **vocabulary** is standardised.
+- The **detection logic** is not.
 
-- a shared vocabulary,  
-- a neutral classification model,  
-- and a simple tagging interface.
+A typical BUDS-enabled node:
 
-Policy remains entirely local.
+1. Parses a transaction into surfaces and byte-ranges,
+2. Applies local heuristics or pattern rules to interpret meaning,
+3. Assigns labels from the standard registry,
+4. Emits tags.
 
-This preserves freedom for node operators, improves transparency, and provides a
-technical foundation for spam mitigation without introducing new consensus rules.
+Different nodes may classify the same transaction differently,
+but the labels themselves remain interoperable and consistent.
 
 ---
 
-## Backwards Compatibility
+## 8. Optional Policy Integration
+
+Nodes and miners MAY use BUDS metadata for:
+
+- mempool admission,
+- fee multipliers,
+- block template preferences,
+- pruning retention classes,
+- statistical analysis.
+
+This BIP defines **no thresholds, fees, penalties, or soft limits**.
+
+All policy use is entirely voluntary and unconstrained.
+
+---
+
+# Rationale
+
+Bitcoin already carries diverse, meaningful data.  
+Without structure, nodes treat:
+
+- channel openings,  
+- rollup roots,  
+- inscriptions,  
+- pool metadata,  
+- large opaque blobs  
+
+as indistinguishable.
+
+BUDS provides:
+
+- neutral terminology,
+- clear metadata structures,
+- optional categorisation,
+- and a single worst-case indicator (ARBDA),
+
+without changing validation, without consensus coordination, and without imposing
+policy.
+
+It enables transparent reasoning and local choice while preserving Bitcoin’s
+permissionless nature.
+
+---
+
+# Backwards Compatibility
 
 BUDS is fully backwards compatible:
 
 - No consensus changes.  
 - No modified transaction formats.  
-- Non-BUDS nodes are unaffected.  
-- BUDS-enabled nodes require no coordination.
+- Nodes without BUDS behave normally.  
+- Nodes with BUDS require no coordination.
 
-Tags and labels are off-chain metadata.
+Tags are purely **off-chain metadata**.
 
 ---
 
-## Reference Implementation
+# Reference Implementation
 
-This repository includes a minimal example (non-normative):
+A full reference implementation, test suite, and browser-based Tag Engine (BUDS LAB) are available in the accompanying repository:
+
+https://github.com/defenwycke/bitcoin-unified-data-standard
+
+These examples illustrate how BUDS metadata may be applied locally without prescribing any particular behaviour.
+
+The repository includes a minimal reference implementation:
 
 ```
-src/buds_labels.*  
-src/buds_tagging.*  
-src/buds_policy_example.*  
+src/buds_labels.*
+src/buds_tagging.*
+src/buds_policy_example.*
 ```
 
-These files illustrate classification, tagging, and policy integration.
+These files demonstrate:
+
+- label resolution  
+- region tagging  
+- category summarisation  
+- ARBDA scoring  
+- example fee-policy integration  
+
+`buds-lab/` provides a browser-based Tag Engine for experimentation.
 
 ---
 
-## Security and Privacy Considerations
+# Security and Privacy Considerations
 
-- Misclassification may affect **local** policy only.  
-- Nodes may disagree on labels or categories.  
-- Implementations should avoid exposing sensitive heuristics through RPCs.  
-- User-supplied data (e.g., OP_RETURN text) must not be trusted as authoritative.
+- Misclassification affects **local policy only**.  
+- Nodes may disagree on label meaning or categorisation.  
+- Implementations should avoid leaking sensitive heuristics through RPCs.  
+- User-embedded metadata (e.g., OP_RETURN text) must not be trusted as authoritative.
 
 ---
 
-## Acknowledgements
+# Acknowledgements
 
-Inspired by long-standing community discussions on arbitrary data, metadata, pruning, and miner policy.  
-Aims to provide a neutral, minimal tool for structuring those conversations.
+This work draws on long-running community discussions around arbitrary data,
+metadata, node incentives, pruning, and local policy.  
+BUDS aims to provide a neutral, minimal framework to improve clarity and reduce
+brittleness across the ecosystem.
