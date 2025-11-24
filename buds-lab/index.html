@@ -125,6 +125,10 @@
       background: #111;
       color: #ccc;
     }
+    .btn-small {
+      font-size: 10px;
+      padding: 2px 8px;
+    }
     .tx-section {
       border-radius: 8px;
       border: 1px solid #222;
@@ -204,10 +208,28 @@
       opacity: 0.85;
       margin-top: 2px;
     }
-    .arbda-t0 .arbda-value { color: #33c3ff; }
-    .arbda-t1 .arbda-value { color: #4caf50; }
-    .arbda-t2 .arbda-value { color: #ffc107; }
-    .arbda-t3 .arbda-value { color: #ff5252; }
+    .arbda-t0 .arbda-value { color: #33c3ff; }  /* blue */
+    .arbda-t1 .arbda-value { color: #4caf50; }  /* green */
+    .arbda-t2 .arbda-value { color: #ffc107; }  /* yellow */
+    .arbda-t3 .arbda-value { color: #ff5252; }  /* red */
+
+    /* Tier legend chips */
+    .tier-legend {
+      margin-top: 4px;
+    }
+    .tier-chip {
+      display: inline-block;
+      padding: 1px 6px;
+      border-radius: 999px;
+      border: 1px solid #333;
+      font-size: 10px;
+      margin-right: 4px;
+      margin-bottom: 2px;
+    }
+    .tier-chip.t0 { color: #33c3ff; border-color: #33c3ff33; }
+    .tier-chip.t1 { color: #4caf50; border-color: #4caf5033; }
+    .tier-chip.t2 { color: #ffc107; border-color: #ffc10733; }
+    .tier-chip.t3 { color: #ff5252; border-color: #ff525233; }
 
     @media (max-width: 960px) {
       .layout {
@@ -361,6 +383,14 @@ No tags yet. Build or paste a transaction and click "Run Tag Engine".
       }
     }
 
+    function reindexOutputs() {
+      const sections = document.querySelectorAll("#outputs > .tx-section");
+      sections.forEach((wrapper, idx) => {
+        const label = wrapper.querySelector('label[data-role="output-label"]');
+        if (label) label.textContent = `Output #${idx}`;
+      });
+    }
+
     function addOutput(type = "custom", spkAsm = "", spkHex = "") {
       const container = document.getElementById("outputs");
       const idx = container.children.length;
@@ -370,7 +400,7 @@ No tags yet. Build or paste a transaction and click "Run Tag Engine".
       wrapper.style.margin = "4px 0";
       wrapper.innerHTML = `
         <div class="row">
-          <label style="flex:0 0 80px;">Output #${idx}</label>
+          <label data-role="output-label" style="flex:0 0 80px;">Output #${idx}</label>
           <select data-type="spk-type">
             <option value="custom">Custom</option>
             <option value="p2pkh">P2PKH</option>
@@ -378,6 +408,7 @@ No tags yet. Build or paste a transaction and click "Run Tag Engine".
             <option value="p2tr">P2TR</option>
             <option value="opreturn">OP_RETURN</option>
           </select>
+          <button type="button" class="btn btn-small" data-action="remove-output">Remove</button>
         </div>
         <div class="row">
           <label style="flex:0 0 80px;">ASM</label>
@@ -393,6 +424,7 @@ No tags yet. Build or paste a transaction and click "Run Tag Engine".
       const typeSelect = wrapper.querySelector('select[data-type="spk-type"]');
       const asmInput = wrapper.querySelector('input[data-field="asm"]');
       const hexInput = wrapper.querySelector('input[data-field="hex"]');
+      const removeBtn = wrapper.querySelector('button[data-action="remove-output"]');
 
       function applyTemplate(t) {
         if (t === "p2pkh") {
@@ -427,6 +459,14 @@ No tags yet. Build or paste a transaction and click "Run Tag Engine".
       typeSelect.addEventListener("change", () => {
         applyTemplate(typeSelect.value);
       });
+
+      removeBtn.addEventListener("click", () => {
+        wrapper.remove();
+        reindexOutputs();
+      });
+
+      // ensure numbering stays clean after adds
+      reindexOutputs();
     }
 
     function addWitnessItem(hex = "") {
@@ -600,11 +640,21 @@ No tags yet. Build or paste a transaction and click "Run Tag Engine".
 
       const tiersStr = tiers.tiersPresent.length ? tiers.tiersPresent.join(", ") : "none";
 
+      const tiersLegend = `
+        <span class="tier-chip t0">T0 = consensus</span>
+        <span class="tier-chip t1">T1 = economic</span>
+        <span class="tier-chip t2">T2 = metadata</span>
+        <span class="tier-chip t3">T3 = unknown/obfuscated</span>
+      `;
+
       const summaryHtml = `
         <div class="summary-card">
           <div class="summary-heading">Classification summary</div>
           <div style="margin-bottom:4px;">${labelsHtml || "<em>No labels</em>"}</div>
           <div class="small-text">Triage tiers present: ${tiersStr}</div>
+          <div class="tier-legend">
+            ${tiersLegend}
+          </div>
         </div>
         <div class="summary-card">
           <div class="summary-heading">Example policy (profile: <strong>${profile}</strong>)</div>
@@ -614,9 +664,6 @@ tx feerate       : ${txFeerate.toFixed(2)} sat/vB
 min multiplier   : ${policy.mult.toFixed(2)}x
 required feerate : ${policy.required.toFixed(2)} sat/vB
 effective score  : ${policy.score.toFixed(2)} (scaled sat/vB)
-          </div>
-          <div class="small-text" style="margin-top:4px;">
-            T0 = consensus, T1 = economic, T2 = metadata, T3 = unknown/obfuscated.
           </div>
         </div>
       `;
