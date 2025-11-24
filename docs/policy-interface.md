@@ -19,6 +19,10 @@ After scanning a transaction, an implementation has:
 
 Policy modules can treat these as hints or ignore them entirely.
 
+Some implementations may derive an aggregate ARBDA tier for each transaction (see docs/arbda.md). 
+
+Policies can use ARBDA as a coarse filter (e.g. de-prioritise ARBDA=T3 transactions under congestion) while still using per-label rules for finer-grained decisions.
+
 ---
 
 ## 2. Common Policy Hooks
