@@ -96,4 +96,8 @@ This runs a few basic checks:
 
 ## License
 
-MIT unless otherwise noted.
+This repo uses a multi licensing scheme:
+
+- Code `(src/, tests/, buds-lab/)`: **MIT**
+- Docs `(README.md, docs/, registry/, whitepaper/)`: **CC BY 4.0**
+- BIP text `(bip/bip-buds.md)`: **BSD-2-Clause** (per BIP process)
