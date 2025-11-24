@@ -138,6 +138,8 @@ BUDS does **not** define any policy mechanics, thresholds, or required behaviour
 
 Example usage (non-normative) is in `policy-interface.md`.
 
+Implementations MAY also compute a transaction-level ARBDA tier (see docs/arbda.md) as a worst-case summary over all regions for use in local policy.
+
 ---
 
 ## 6. Non-Goals
