@@ -231,6 +231,15 @@
     .tier-chip.t2 { color: #ffc107; border-color: #ffc10733; }
     .tier-chip.t3 { color: #ff5252; border-color: #ff525233; }
 
+    /* Tier tag for breakdown ( (T1) etc ) */
+    .tier-tag {
+      font-weight: 600;
+    }
+    .tier-tag.t0 { color: #33c3ff; }
+    .tier-tag.t1 { color: #4caf50; }
+    .tier-tag.t2 { color: #ffc107; }
+    .tier-tag.t3 { color: #ff5252; }
+
     @media (max-width: 960px) {
       .layout {
         flex-direction: column;
@@ -391,6 +400,14 @@ No tags yet. Build or paste a transaction and click "Run Tag Engine".
       });
     }
 
+    function reindexWitness() {
+      const rows = document.querySelectorAll("#witness > .row");
+      rows.forEach((wrapper, idx) => {
+        const label = wrapper.querySelector('label[data-role="witness-label"]');
+        if (label) label.textContent = `Item #${idx}`;
+      });
+    }
+
     function addOutput(type = "custom", spkAsm = "", spkHex = "") {
       const container = document.getElementById("outputs");
       const idx = container.children.length;
@@ -465,7 +482,6 @@ No tags yet. Build or paste a transaction and click "Run Tag Engine".
         reindexOutputs();
       });
 
-      // ensure numbering stays clean after adds
       reindexOutputs();
     }
 
@@ -476,10 +492,19 @@ No tags yet. Build or paste a transaction and click "Run Tag Engine".
       const wrapper = document.createElement("div");
       wrapper.className = "row";
       wrapper.innerHTML = `
-        <label style="flex:0 0 80px;">Item #${idx}</label>
+        <label data-role="witness-label" style="flex:0 0 80px;">Item #${idx}</label>
         <input type="text" data-field="witness-hex" placeholder="hex-encoded witness item" value="${hex}" />
+        <button type="button" class="btn btn-small" data-action="remove-witness">Remove</button>
       `;
       container.appendChild(wrapper);
+
+      const removeBtn = wrapper.querySelector('[data-action="remove-witness"]');
+      removeBtn.addEventListener("click", () => {
+        wrapper.remove();
+        reindexWitness();
+      });
+
+      reindexWitness();
     }
 
     function clearTx() {
@@ -493,7 +518,6 @@ No tags yet. Build or paste a transaction and click "Run Tag Engine".
         'No breakdown yet. Run the Tag Engine to see per-output labels and tiers.';
       document.getElementById("summary").innerHTML =
         "No classification yet. Build or paste a transaction and run the Tag Engine.";
-      // reset ARBDA card
       const card = document.getElementById("arbdaScoreCard");
       card.classList.remove("arbda-t0", "arbda-t1", "arbda-t2", "arbda-t3");
       document.getElementById("arbdaScoreValue").textContent = "–";
@@ -600,7 +624,7 @@ No tags yet. Build or paste a transaction and click "Run Tag Engine".
 
       lastResult = { tx, classification, tiers, policy, profile, arbdaTier };
 
-      // --- raw tag list ---
+      // Raw tags
       const tagLines = classification.tags.map(tag => {
         const labelsStr = tag.labels.join(",");
         return `surface=${tag.surface}  range=[${tag.start},${tag.end})  labels=[${labelsStr}]`;
@@ -608,7 +632,7 @@ No tags yet. Build or paste a transaction and click "Run Tag Engine".
       document.getElementById("tagList").textContent =
         tagLines.length ? tagLines.join("\n") : "No tags produced.";
 
-      // --- per-output / region breakdown ---
+      // Breakdown with coloured (T#)
       const breakdownLines = [];
       (classification.tags || []).forEach(tag => {
         const labels = tag.labels.join(", ");
@@ -624,13 +648,18 @@ No tags yet. Build or paste a transaction and click "Run Tag Engine".
         if (tag.labels && tag.labels.length > 0) {
           tier = engine.getTierForLabel(tag.labels[0]);
         }
-        breakdownLines.push(`${region} → ${labels} (${tier})`);
+        const tierClass = tier.toLowerCase();
+        breakdownLines.push(
+          `${region} \u2192 ${labels} (` +
+          `<span class="tier-tag ${tierClass}">${tier}</span>` +
+          `)`
+        );
       });
-      document.getElementById("breakdownList").textContent =
-        breakdownLines.length ? breakdownLines.join("\n") :
+      document.getElementById("breakdownList").innerHTML =
+        breakdownLines.length ? breakdownLines.join("<br>") :
         "No breakdown yet. Run the Tag Engine to see per-output labels and tiers.";
 
-      // --- classification summary + policy ---
+      // Classification summary + policy
       const allLabels = new Set();
       classification.tags.forEach(t => t.labels.forEach(l => allLabels.add(l)));
       let labelsHtml = "";
@@ -669,7 +698,7 @@ effective score  : ${policy.score.toFixed(2)} (scaled sat/vB)
       `;
       document.getElementById("summary").innerHTML = summaryHtml;
 
-      // --- ARBDA card ---
+      // ARBDA card
       const card = document.getElementById("arbdaScoreCard");
       card.classList.remove("arbda-t0", "arbda-t1", "arbda-t2", "arbda-t3");
       card.classList.add("arbda-" + arbdaTier.toLowerCase());
