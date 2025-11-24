@@ -45,7 +45,7 @@ The machine-readable registry is in [`registry/registry.json`](registry/registry
 
 ## Status
 
-BUDS v1 is a draft intended for review, experimentation, and integration into node or policy engines (e.g., Bitcoin Ghost, custom miners, research tools).
+The current BUDS draft (v0.1.x series) is intended for review, experimentation, and integration into node or policy engines (e.g., custom miners, research tools).
 
 No consensus changes. No required policies.
 
