@@ -1,8 +1,9 @@
-# ARBDA – Arbitrary Data Score
+# ARBDA – Arbitrary Data Dominance Assessment
 
-ARBDA (Arbitrary Data Score) is an optional **transaction-level risk rating** built *on top of* BUDS classifications.
+ARBDA (Arbitrary Data Dominance Assessment) is an optional **transaction-level risk rating** built *on top of* BUDS classifications.
 
 BUDS labels and tiers describe **regions of a transaction**.  
+
 ARBDA answers a different question:
 
 > **“Given all the data inside this transaction, how risky is the transaction *as a whole* from an arbitrary-data perspective?”**
