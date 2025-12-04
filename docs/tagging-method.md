@@ -172,31 +172,46 @@ This makes it easy for node operators and policy engines to see at a glance:
 
 ---
 
-## 5. Example: minimal Tag Engine (browser demo)
+## 5. Example: Tag Engine used in `buds-lab`
 
-The browser-based Tag Engine used in `buds-lab` applies the above rules:
+The browser-based Tag Engine shipped in `buds-lab` is a **reference demo**.  
+It follows the general pipeline in this document, but with a very small rule
+set:
 
 1. For each `scriptpubkey[n]`:
-   - detect OP_RETURN → `da.op_return_embed` (T2),
-   - detect P2PKH → `pay.standard` (T1),
-   - else → `pay.standard` (T1).
+
+   - Detect OP_RETURN and classify payload into:
+     - `commitment.rollup_root`
+     - `meta.indexer_hint`
+     - `da.op_return_embed`
+     - `da.embed_misc`
+
+   - Detect common payment forms:
+     - P2PKH (25-byte classic script)
+     - P2WPKH (22-byte v0 witness keyhash)
+     - P2TR (34-byte xonly key)
+
+   - Fallback for other scriptpubkeys:
+     - `pay.standard`.
 
 2. For each `witness.stack[i:j]`:
-   - `len > 512` bytes → `da.obfuscated` (T3),
-   - else → `da.unknown` (T3).
 
-3. For each label, compute the tier (T0–T3).
+   - If it looks like an ordinal/inscription payload (contains `"ord"`):
+     - if `> 256` bytes → `meta.inscription`
+     - else → `meta.ordinal`
 
-4. Produce:
+   - Else, if it is ≤ 128 bytes and mostly printable ASCII:
+     - `da.unregistered_vendor`
 
-   - a list of tags (`surface`, `start`, `end`, `labels[]`),
-   - a tier summary (`tiersPresent`, per-tier counts).
+   - Else, if `> 512` bytes:
+     - `da.obfuscated`
 
-This is enough to:
+   - Else:
+     - `da.unknown`.
 
-- demonstrate BUDS in the browser,
-- drive the example local policy model in BUDS LAB,
-- and act as a reference for other implementations.
+This is deliberately **opinionated and incomplete**. It is designed to show
+how BUDS labels and tiers can be produced from simple heuristics, not to be a
+complete protocol recogniser.
 
 ---
 

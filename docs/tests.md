@@ -10,6 +10,10 @@ The goal of the tests is to:
 - provide concrete **test vectors** that can be reused in other
   implementations and in the BIP text.
 
+For a detailed, hand-checked set of examples, see:
+
+- `buds-lab/docs/buds-lab-test-matrix.md` – BUDS v2 Tag Engine Test Matrix.
+
 ---
 
 ## Files

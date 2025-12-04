@@ -109,7 +109,12 @@ da.unregistered_vendor
 
 Labels describe **intended interpretation**, not a guarantee of truth.
 
-All normative labels live in `registry/registry.json`.
+All normative labels for this BIP live in the BUDS registry.
+
+- The canonical v2 registry file is `registry/registry-v2.json`.
+- The earlier `registry/registry.json` is retained for legacy and exploratory tooling  
+and MAY be referenced by older implementations, but new systems SHOULD prefer v2.
+
 
 ---
 

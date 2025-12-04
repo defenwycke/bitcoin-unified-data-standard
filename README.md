@@ -2,6 +2,15 @@
 
 **BUDS** is a minimal, neutral, non-consensus framework that defines a:
 
+The current reference implementation and browser demo use **BUDS v2** labels
+and heuristics, including OP_RETURN sub-types, ordinal/inscription hints, and
+a simple ARBDA (worst-tier) score.
+
+The canonical v2 registry is [`registry/registry-v2.json`](registry/registry-v2.json),
+and the browser playground for BUDS v2 heuristics is located in
+[`buds-lab/`](buds-lab/), with a detailed test matrix in
+[`buds-lab/docs/buds-lab-test-matrix.md`](buds-lab/docs/buds-lab-test-matrix.md).
+
 **standard vocabulary for describing data inside Bitcoin transactions.**
 
 BUDS gives node operators, miners, indexers, and L2 builders a shared way to:

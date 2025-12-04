@@ -144,38 +144,110 @@ Each **tag** includes:
 - `start`, `end` – byte range (currently always `[0, length)`),
 - `labels[]` – one or more BUDS labels.
 
-### 2.2 Script classification (scriptPubKey)
+### 2.2 ScriptPubKey classification
 
-Rules (simplified):
+For each `scriptpubkey[n]`, the demo Tag Engine applies a small set of
+non-consensus heuristics. These are meant to roughly mirror what many wallets
+and nodes would already infer from standard script templates.
 
-- If the script is detected as `OP_RETURN`:
-  - label: `da.op_return_embed`  
-    (treated as data embedded via OP_RETURN)
+1. **Detect OP_RETURN lane**
 
-- Else if it matches a simple P2PKH template:
-  - hex pattern: `76a914 <20 bytes> 88ac`
-  - label: `pay.standard`
+   If the script is recognised as `OP_RETURN` (ASM starts with `OP_RETURN` or
+   hex starts with `6a…`), the engine:
 
-- Else (fallback):
-  - label: `pay.standard`  
-    (for now, everything non-OP_RETURN in scriptPubKey is treated as “normal payment lane”)
+   - extracts the pushed payload (skipping `OP_RETURN` + 1 push-length byte),
+   - inspects payload length and whether it looks like mostly-ASCII text.
 
-Future versions can extend this with P2WPKH, P2TR, multisig, channel opens, etc., while keeping the same interface.
+   It then chooses:
+
+   - `commitment.rollup_root`  
+     - if the script looks like `6a20……` carrying a ~32-byte blob  
+     - intended to approximate “L2 / rollup root commitment” use cases.
+
+   - `meta.indexer_hint`  
+     - if payload is **≤ 8 bytes** and mostly ASCII  
+     - think short flags, version markers, or “tag” strings.
+
+   - `da.op_return_embed`  
+     - if payload is ASCII and **up to ~32 bytes**, or a short/medium blob  
+     - general human-readable or small structured metadata.
+
+   - `da.embed_misc`  
+     - if payload is larger than ~80 bytes  
+     - catch-all for bulk metadata that is still explicitly embedded via OP_RETURN.
+
+2. **Detect standard payment templates**
+
+   If the script is **not** OP_RETURN, the engine tries common payment forms:
+
+   - P2PKH  
+     - hex length `25 bytes` (`50` hex chars)  
+     - prefix `76a914`, suffix `88ac`.
+
+   - P2WPKH  
+     - hex length `22 bytes` (`44` hex chars)  
+     - prefix `0014`.
+
+   - P2TR  
+     - hex length `34 bytes` (`68` hex chars)  
+     - prefix `5120`.
+
+   Any of these patterns → label:
+
+   - `pay.standard` (T1).
+
+3. **Fallback**
+
+   If none of the above match, the demo engine currently still labels the
+   scriptPubKey as:
+
+   - `pay.standard`.
+
+   This is intentionally conservative: unknown non-OP_RETURN outputs are
+   treated as “normal payment lane” unless a future version adds more specific
+   `pay.*` / `contracts.*` recognisers.
 
 ### 2.3 Witness classification
 
-For each witness stack item:
+For each witness stack item (`witness.stack[i:j]`), the demo engine:
 
-- Compute its length in bytes.
-- If `length > 512` bytes:
-  - label: `da.obfuscated`
-- Else:
-  - label: `da.unknown`
+1. Computes the byte length from hex.
+2. Checks for simple ordinal / inscription-like patterns.
+3. Falls back to ASCII / size heuristics.
 
-The idea:
+The rules are:
 
-- large, opaque blobs in witness are likely “data abuse”,
-- smaller items are “unknown” but cheaper to tolerate.
+1. **Ordinal / inscription lane**
+
+   - If the hex contains `6f7264` (`"ord"` in ASCII), we treat it as
+     ordinal-style data:
+
+     - If `length > 256` bytes → `meta.inscription` (T2)
+     - Else → `meta.ordinal` (T2)
+
+2. **Unregistered vendor protocols**
+
+   - If the payload is **≤ 128 bytes** and is mostly printable ASCII, and did
+     not match the ordinal rule above, it is treated as:
+
+     - `da.unregistered_vendor` (T3)
+
+   This is a soft hint: “looks like a structured vendor protocol that hasn’t
+   claimed a public BUDS label”.
+
+3. **Large opaque blobs**
+
+   - If `length > 512` bytes → `da.obfuscated` (T3)
+
+   This is the “worst-case” catch-all for big, non-transparent blobs in the
+   witness lane.
+
+4. **Everything else**
+
+   - Otherwise → `da.unknown` (T3)
+
+Together, these rules give a simple but more expressive breakdown of witness
+data without relying on any specific protocol’s internals.
 
 ### 2.4 Tier mapping (T0–T3)
 
@@ -325,15 +397,12 @@ Then open port `8080` from the **Ports** panel.
 
 ## 6. Limitations
 
-- The Tag Engine currently implements only a **minimal** subset of BUDS:
-  - OP_RETURN detection,
-  - simple P2PKH detection,
-  - size-based witness classification.
-- It is not aware of:
-  - real transaction structure (inputs, value, sighash flags, etc.),
-  - complex contract scripts,
-  - specific L2 protocols.
-- The policy model is intentionally simple and opinionated.
+- The Tag Engine currently implements a **small but still simplified** subset
+  of BUDS:
+  - OP_RETURN heuristics (rollup-like roots, indexer hints, general embeds).
+  - Basic payment templates (P2PKH / P2WPKH / P2TR).
+  - Simple ordinal / inscription / vendor / unknown / obfuscated witness
+    classification.
 
 Future work may include:
 

@@ -42,7 +42,6 @@
       padding: 16px;
     }
     .panel {
-      flex: 1;
       background: #111;
       border-radius: 10px;
       border: 1px solid #222;
@@ -50,6 +49,12 @@
       display: flex;
       flex-direction: column;
       min-height: 420px;
+    }
+    .panel-left {
+      flex: 1.6; /* make left panel wider so JSON box is larger */
+    }
+    .panel-right {
+      flex: 1;
     }
     .panel-title {
       font-size: 14px;
@@ -86,6 +91,10 @@
     textarea {
       min-height: 160px;
       resize: vertical;
+    }
+    #jsonInput {
+      width: 100%;
+      box-sizing: border-box;
     }
     .btn {
       font-size: 12px;
@@ -244,6 +253,10 @@
       .layout {
         flex-direction: column;
       }
+      .panel-left,
+      .panel-right {
+        flex: 1;
+      }
     }
   </style>
 </head>
@@ -262,7 +275,7 @@
 
   <div class="layout">
     <!-- Left panel: transaction input -->
-    <div class="panel">
+    <div class="panel panel-left">
       <div class="panel-title">
         <span>Transaction Input</span>
         <span>
@@ -312,7 +325,7 @@
     </div>
 
     <!-- Right panel: policy + output -->
-    <div class="panel">
+    <div class="panel panel-right">
       <div class="panel-title">
         <span>Node Policy & Fees (example)</span>
       </div>
@@ -371,6 +384,40 @@ No tags yet. Build or paste a transaction and click "Run Tag Engine".
     let currentInputMode = "builder";
     let lastResult = null;
 
+    // BUDS v2 labels by tier, derived from BUDS_REGISTRY_V2 (from buds-tag-engine.js)
+    const BUDS_LABELS_BY_TIER = (() => {
+      const out = { T0: [], T1: [], T2: [], T3: [] };
+      if (typeof BUDS_REGISTRY_V2 === "object") {
+        Object.entries(BUDS_REGISTRY_V2).forEach(([label, tier]) => {
+          if (!out[tier]) out[tier] = [];
+          out[tier].push(label);
+        });
+      }
+      Object.keys(out).forEach(tier => out[tier].sort());
+      return out;
+    })();
+
+    // Build a <select> HTML snippet for choosing a BUDS label.
+    // First option = "(auto: infer type)" so the engine uses its own heuristics.
+    function buildBudsLabelSelectHtml(selected = "") {
+      let html = '<select data-field="buds-label">';
+      html += '<option value="">(auto: infer type)</option>';
+
+      ["T0", "T1", "T2", "T3"].forEach(tier => {
+        const labels = BUDS_LABELS_BY_TIER[tier] || [];
+        if (!labels.length) return;
+        html += `<optgroup label="${tier}">`;
+        labels.forEach(label => {
+          const sel = (label === selected) ? " selected" : "";
+          html += `<option value="${label}"${sel}>${label}</option>`;
+        });
+        html += "</optgroup>";
+      });
+
+      html += "</select>";
+      return html;
+    }
+
     function setInputMode(mode) {
       currentInputMode = mode;
 
@@ -419,29 +466,33 @@ No tags yet. Build or paste a transaction and click "Run Tag Engine".
         <div class="row">
           <label data-role="output-label" style="flex:0 0 80px;">Output #${idx}</label>
           <select data-type="spk-type">
-            <option value="custom">Custom</option>
-            <option value="p2pkh">P2PKH</option>
-            <option value="p2wpkh">P2WPKH</option>
-            <option value="p2tr">P2TR</option>
-            <option value="opreturn">OP_RETURN</option>
+            <option value="custom"${type === "custom" ? " selected" : ""}>Custom</option>
+            <option value="p2pkh"${type === "p2pkh" ? " selected" : ""}>P2PKH</option>
+            <option value="p2wpkh"${type === "p2wpkh" ? " selected" : ""}>P2WPKH</option>
+            <option value="p2tr"${type === "p2tr" ? " selected" : ""}>P2TR</option>
+            <option value="opreturn"${type === "opreturn" ? " selected" : ""}>OP_RETURN</option>
           </select>
           <button type="button" class="btn btn-small" data-action="remove-output">Remove</button>
         </div>
         <div class="row">
           <label style="flex:0 0 80px;">ASM</label>
-          <input type="text" data-field="asm" placeholder="e.g. OP_DUP OP_HASH160 ..." />
+          <input type="text" data-field="asm" placeholder="e.g. OP_DUP OP_HASH160 ..." value="${spkAsm}" />
         </div>
         <div class="row">
           <label style="flex:0 0 80px;">Hex</label>
-          <input type="text" data-field="hex" placeholder="raw scriptPubKey hex" />
+          <input type="text" data-field="hex" placeholder="raw scriptPubKey hex" value="${spkHex}" />
+        </div>
+        <div class="row">
+          <label style="flex:0 0 80px;">BUDS label</label>
+          ${buildBudsLabelSelectHtml()}
         </div>
       `;
       container.appendChild(wrapper);
 
       const typeSelect = wrapper.querySelector('select[data-type="spk-type"]');
-      const asmInput = wrapper.querySelector('input[data-field="asm"]');
-      const hexInput = wrapper.querySelector('input[data-field="hex"]');
-      const removeBtn = wrapper.querySelector('button[data-action="remove-output"]');
+      const asmInput   = wrapper.querySelector('input[data-field="asm"]');
+      const hexInput   = wrapper.querySelector('input[data-field="hex"]');
+      const removeBtn  = wrapper.querySelector('button[data-action="remove-output"]');
 
       function applyTemplate(t) {
         if (t === "p2pkh") {
@@ -457,6 +508,7 @@ No tags yet. Build or paste a transaction and click "Run Tag Engine".
           asmInput.value = "OP_RETURN 6f6b";
           hexInput.value = "6a026f6b";
         } else {
+          // custom: don't overwrite user input
           if (!spkAsm && !spkHex) {
             asmInput.value = "";
             hexInput.value = "";
@@ -465,6 +517,7 @@ No tags yet. Build or paste a transaction and click "Run Tag Engine".
         }
       }
 
+      // Init template or keep explicit values
       typeSelect.value = type;
       if (spkAsm || spkHex) {
         asmInput.value = spkAsm;
@@ -495,6 +548,8 @@ No tags yet. Build or paste a transaction and click "Run Tag Engine".
         <label data-role="witness-label" style="flex:0 0 80px;">Item #${idx}</label>
         <input type="text" data-field="witness-hex" placeholder="hex-encoded witness item" value="${hex}" />
         <button type="button" class="btn btn-small" data-action="remove-witness">Remove</button>
+        <label style="flex:0 0 80px; margin-left:8px;">BUDS label</label>
+        ${buildBudsLabelSelectHtml()}
       `;
       container.appendChild(wrapper);
 
@@ -603,6 +658,42 @@ No tags yet. Build or paste a transaction and click "Run Tag Engine".
       }
     }
 
+    // Apply manual BUDS label overrides from the builder UI surfaces
+    function applyManualOverrides(classification) {
+      if (!classification || !classification.tags) return;
+
+      const overrides = new Map();
+
+      // Outputs: scriptpubkey[n]
+      const outputWrappers = document.querySelectorAll("#outputs > .tx-section");
+      outputWrappers.forEach((wrapper, idx) => {
+        const sel = wrapper.querySelector('select[data-field="buds-label"]');
+        if (!sel) return;
+        const label = sel.value.trim();
+        if (label) {
+          overrides.set(`scriptpubkey[${idx}]`, [label]);
+        }
+      });
+
+      // Witness: assume a single vin index (0) for lab purposes
+      const witnessRows = document.querySelectorAll("#witness > .row");
+      witnessRows.forEach((wrapper, stackIdx) => {
+        const sel = wrapper.querySelector('select[data-field="buds-label"]');
+        if (!sel) return;
+        const label = sel.value.trim();
+        if (label) {
+          overrides.set(`witness.stack[0:${stackIdx}]`, [label]);
+        }
+      });
+
+      classification.tags.forEach(tag => {
+        const o = overrides.get(tag.surface);
+        if (o) {
+          tag.labels = o.slice();
+        }
+      });
+    }
+
     function runTagEngine() {
       let tx;
       if (currentInputMode === "builder") {
@@ -618,6 +709,12 @@ No tags yet. Build or paste a transaction and click "Run Tag Engine".
 
       const engine = new BudsTagEngine(profile);
       const classification = engine.classify(tx);
+
+      // Only apply manual overrides in builder mode
+      if (currentInputMode === "builder") {
+        applyManualOverrides(classification);
+      }
+
       const tiers = engine.summarizeTiers(classification);
       const arbdaTier = engine.computeArbdaTierFromCounts(tiers.counts);
       const policy = engine.computePolicy(classification, baseMin, txFeerate);
@@ -678,7 +775,7 @@ No tags yet. Build or paste a transaction and click "Run Tag Engine".
 
       const summaryHtml = `
         <div class="summary-card">
-          <div class="summary-heading">Classification summary</div>
+          <div class="summary-heading">Classification summary (BUDS v${engine.budsVersion})</div>
           <div style="margin-bottom:4px;">${labelsHtml || "<em>No labels</em>"}</div>
           <div class="small-text">Triage tiers present: ${tiersStr}</div>
           <div class="tier-legend">
