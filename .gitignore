@@ -1,0 +1,6 @@
+# Node / JS tooling
+buds-lab/node_modules/
+buds-lab/dist/
+
+# Misc
+*.log
