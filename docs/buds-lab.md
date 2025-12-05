@@ -1,344 +1,191 @@
-# BUDS LAB – Tag Engine Playground
+# BUDS Lab — Interactive Tag Engine Playground
 
-BUDS LAB is a small, browser-based playground for the **Bitcoin Unified Data Standard (BUDS)**.
+The **BUDS Lab** is a browser-based interactive environment for exploring
+**BUDS v2 classification**, **tier detection (T0–T3)**, **region tagging**, and
+the **ARBDA (worst-tier) score**.
 
-It lets you:
-
-- Build or paste a simple Bitcoin transaction structure.
-- Run the **BUDS Tag Engine** on it.
-- Inspect:
-  - per-region labels (e.g. `pay.standard`, `da.op_return_embed`, `da.obfuscated`),
-  - conceptual **tiers** (`T0–T3`),
-  - and an **example local node policy** (fee multipliers and scores).
-
-BUDS LAB is **non-consensus** and **non-normative**.  
-It is for experimentation, education, and demonstrating how BUDS could be used inside node policy, not a production policy engine.
+It allows users to interactively build transactions, adjust outputs and witness
+items, and run the Tag Engine to understand how BUDS interprets data inside
+Bitcoin transactions.
 
 ---
 
-## 1. Layout
+## 1. Overview
 
-BUDS LAB is a single page with two main panels:
+The BUDS Lab includes:
 
-### Left: Transaction Input
+- **Builder mode** (UI controls)
+- **JSON mode** (paste a SimpleTx JSON object)
+- **Per-region labels** (e.g. `pay.standard`, `meta.indexer_hint`)
+- **Tier markers** (`T0`, `T1`, `T2`, `T3`)
+- **ARBDA score card**
+- **Policy profile** (strict / neutral / permissive)
+- **JSON import / export**
+- **Witness & OP_RETURN data editing**
+- **Sub-type detection**  
+  - rollup roots  
+  - OP_RETURN subtypes  
+  - ordinal/inscription hints  
+  - vendor data  
+  - unclassified / obfuscated blobs  
 
-Two modes:
+The Lab is powered by:
 
-- **Builder mode**
-  - Set a `TXID`.
-  - Add **Outputs (scriptPubKey)**:
-    - Choose a template:
-      - `P2PKH`
-      - `P2WPKH` (placeholder template)
-      - `P2TR` (placeholder template)
-      - `OP_RETURN`
-      - or `Custom`
-    - Each output has:
-      - `ASM` – human-readable script, and
-      - `Hex` – raw `scriptPubKey` hex.
-  - Add **Witness (stack items)**:
-    - Hex-encoded stack elements.
-    - Large items (> 512 bytes) are treated as potential data blobs.
-
-- **JSON mode**
-  - Paste a `SimpleTx`-style JSON object:
-
-```
-    {
-      "txid": "…",
-      "vout": [
-        {
-          "scriptPubKey": {
-            "asm": "…",
-            "hex": "…"
-          }
-        }
-      ],
-      "witness": [
-        {
-          "stack": ["…"]
-        }
-      ]
-    }
-```
-
-  - This mirrors the in-memory structure used by the reference Tag Engine.
-
-The top of the panel has:
-
-- `Builder` / `JSON` toggle
-- `Load example`
-- `Clear`
-
-### Right: BUDS Tag Engine Output
-
-Contains:
-
-1. **Node Policy & Fees (example)**
-   - `Base mempool min (sat/vB)` – baseline local minimum feerate.
-   - `Tx feerate (sat/vB)` – feerate for the transaction under test.
-   - `Policy profile` – one of:
-     - `neutral` – mild penalties for unknown/obfuscated data.
-     - `strict` – heavy penalties for unknown/obfuscated data.
-     - `permissive` – light penalties, more tolerant.
-   - These are **local policy knobs**, not consensus rules.
-
-2. **Classification summary**
-   - All unique labels present (e.g. `pay.standard`, `da.op_return_embed`, `da.obfuscated`, `da.unknown`).
-   - **Triage tiers present** (see below): some subset of `T0, T1, T2, T3`.
-   - Short reminder:
-     - `T0` – consensus / validation-critical.
-     - `T1` – economic / Bitcoin-critical data.
-     - `T2` – metadata / hints / optional.
-     - `T3` – unknown / obfuscated / likely spam.
-
-3. **Example policy result**
-   - Using the selected profile and fee knobs, the engine reports:
-     - `base mempool min` – input baseline.
-     - `tx feerate` – input.
-     - `min multiplier` – maximum multiplier implied by all labels.
-     - `required feerate` – `base_min * min_multiplier`.
-     - `effective score` – `tx_feerate * (1 + boostSum)`, where `boostSum`
-       is an aggregate of label-specific boosts/penalties.
-   - This is a **demo of how a node *could* use BUDS labels**, not a recommendation.
-
-4. **Tags panel**
-   - A line per tagged region, for example:
-
-```
-     surface=scriptpubkey[0]  range=[0,25)  labels=[pay.standard]
-     surface=scriptpubkey[1]  range=[0,4)   labels=[da.op_return_embed]
-     surface=witness.stack[0:0]  range=[0,600)  labels=[da.obfuscated]
-```
-
-5. **ARBDA transaction tier**
-
-BUDS LAB also computes an **ARBDA (Arbitrary Data) tier** for the whole transaction:
-
-- If any `T3` data is present → `ARBDA = T3`  
-- Else if any `T2` data is present → `ARBDA = T2`  
-- Else if any `T1` data is present → `ARBDA = T1`  
-- Else → `ARBDA = T0`
-
-This reflects a conservative “guilty until proven innocent” rule for arbitrary/obfuscated data. 
-Even if a transaction has many T0/T1 regions, a single T3 blob is enough to make the whole tx `ARBDA = T3`.
-
-The ARBDA tier is shown in the LAB summary and included in the JSON export (`"arbdaTier"` field).
+- `buds-tag-engine.js` (browser heuristics)
+- Vite development server
+- the canonical registry (registry-v2.json)
 
 ---
 
-## 2. BUDS Tag Engine (browser version)
+## 2. Running the Lab
 
-The browser Tag Engine (`buds-lab/buds-tag-engine.js`) is a **reference implementation** of the BUDS classification pipeline.
+### 2.1 Install dependencies
 
-### 2.1 Surfaces and regions
+```bash
+cd buds-lab
+npm install
+```
 
-For now, the engine looks at:
+### 2.2 Start the development server
 
-- `scriptpubkey[n]` – each transaction output.
-- `witness.stack[i:j]` – each witness stack item.
+```bash
+npm run dev
+```
 
-Each **tag** includes:
+This launches the Lab at:
 
-- `surface` – which region,
-- `start`, `end` – byte range (currently always `[0, length)`),
-- `labels[]` – one or more BUDS labels.
-
-### 2.2 Script classification (scriptPubKey)
-
-Rules (simplified):
-
-- If the script is detected as `OP_RETURN`:
-  - label: `da.op_return_embed`  
-    (treated as data embedded via OP_RETURN)
-
-- Else if it matches a simple P2PKH template:
-  - hex pattern: `76a914 <20 bytes> 88ac`
-  - label: `pay.standard`
-
-- Else (fallback):
-  - label: `pay.standard`  
-    (for now, everything non-OP_RETURN in scriptPubKey is treated as “normal payment lane”)
-
-Future versions can extend this with P2WPKH, P2TR, multisig, channel opens, etc., while keeping the same interface.
-
-### 2.3 Witness classification
-
-For each witness stack item:
-
-- Compute its length in bytes.
-- If `length > 512` bytes:
-  - label: `da.obfuscated`
-- Else:
-  - label: `da.unknown`
-
-The idea:
-
-- large, opaque blobs in witness are likely “data abuse”,
-- smaller items are “unknown” but cheaper to tolerate.
-
-### 2.4 Tier mapping (T0–T3)
-
-Each label is mapped to one of four conceptual **tiers**:
-
-- **T0 – consensus / validation-critical**
-  - e.g. `consensus.*` (not yet emitted by the browser engine, but reserved).
-
-- **T1 – economic / Bitcoin-critical**
-  - e.g. `pay.*`, `commitment.*`, `contracts.*`.
-
-- **T2 – metadata / hints / optional**
-  - e.g. `meta.*`, `da.op_return_embed`.
-
-- **T3 – unknown / obfuscated / likely spam**
-  - any other label, including:
-    - `da.unknown`
-    - `da.obfuscated`
-    - vendor-specific labels without special treatment.
-
-The summary shows:
-
-- which tiers are present (`tiersPresent`), and
-- how many tags mapped into each (`counts`).
-
-This gives node operators a **coarse view** of “what kind of data this transaction carries”.
+```
+http://localhost:5173/
+```
 
 ---
 
-## 3. Local policy model (profiles & knobs)
+## 3. Using the Interface
 
-The Tag Engine includes a simple, configurable **policy model**:
+### Modes
 
-- Every label maps to:
-  - `minMult` – minimum feerate multiplier.
-  - `boost` – a bonus or penalty applied once per unique label.
+- **Builder Mode**:  
+  Create a transaction visually (add/remove outputs, witness items, edit fields).
 
-Profiles:
+- **JSON Mode**:  
+  Directly paste a SimpleTx JSON object to test classification programmatically.
 
-- **Neutral (default)**  
-  - moderate penalties for `da.unknown` and `da.obfuscated`,
-  - small penalty for `da.op_return_embed`,
-  - neutral or slightly positive for payment labels.
+### Running the Tag Engine
 
-- **Strict**  
-  - high `minMult` and strong negative `boost` for `da.unknown` / `da.obfuscated`,
-  - OP_RETURN also penalised more.
+Click **Run Tag Engine** to display:
 
-- **Permissive**  
-  - low multipliers and gentle penalties for data labels.
+- region-level labels  
+- tier markers (T0–T3)  
+- ARBDA score  
+- policy effects (based on policy profile)  
+- raw tags breakdown  
 
-Given:
+### Example Features
 
-- `base_min_feerate` (from the UI),
-- `tx_feerate` (from the UI),
-
-the engine computes:
-
-- `required = base_min_feerate * max_label_minMult`
-- `score   = tx_feerate * (1 + boostSum)`
-
-This does **not** represent any real network policy. It is only:
-
-- a worked example of how BUDS labels could feed into:
-  - mempool admission,
-  - eviction,
-  - or block template scoring.
+- Switch policy profile (strict / neutral / permissive)
+- Export full classification JSON
+- Add/remove outputs and witness items
+- See worst-tier ARBDA instantly
+- Identify OP_RETURN sub-types (T1/T2/T3)
+- Identify ordinal/inscription witness signatures
+- Detect unregistered vendor metadata
+- Detect obfuscated or bulk witness blobs
 
 ---
 
-## 4. Exporting results
+## 4. Test Matrix (A–G)
 
-The **Export JSON** button copies a structured result to your clipboard:
-
-- `tx` – the SimpleTx object,
-- `classification` – txid and all tags,
-- `tiers` – tiers present and per-tier counts,
-- `policy` – required feerate, effective score, multiplier, boost sum,
-- `profile` – which policy profile was used.
-
-Example export:
+The full test matrix is stored at:
 
 ```
-{
-  "tx": { ... },
-  "classification": {
-    "txid": "...",
-    "tags": [
-      {
-        "surface": "scriptpubkey[0]",
-        "start": 0,
-        "end": 4,
-        "labels": ["da.op_return_embed"]
-      }
-    ]
-  },
-  "tiers": {
-    "tiersPresent": ["T2"],
-    "counts": { "T0": 0, "T1": 0, "T2": 1, "T3": 0 }
-  },
-  "policy": {
-    "required": 1.2,
-    "score": 4.75,
-    "mult": 1.2,
-    "boostSum": -0.05
-  },
-  "profile": "permissive"
-}
+buds-lab/docs/buds-lab-test-matrix.md
 ```
 
-This is useful for:
+### Summary
 
-- filing issues,
-- comparing different Tag Engine versions,
-- or feeding the output into external tools.
+- **Group A – Baseline Payments (T1)**
+  - P2PKH / P2WPKH / P2TR
+  - → `pay.standard` → ARBDA = T1
+
+- **Group B – OP_RETURN Sub-types**
+  - ASCII hints → `meta.indexer_hint` (T2)
+  - medium embeds → `da.op_return_embed` (T2)
+  - rollup roots → `commitment.rollup_root` (T1)
+
+- **Group C – Witness Blobs**
+  - C1: ASCII vendor blobs → `da.unregistered_vendor` (T3)
+  - C2: small random → `da.unknown` (T3)
+  - C3: large random >512B → `da.obfuscated` (T3)
+  - C4: ord/inscription signatures → `meta.ordinal` / `meta.inscription` (T2)
+
+- **Group D – Mixed TX**
+  - Payment + OP_RETURN + witness → ARBDA = worst detected tier
+
+- **Group E – Multiple Outputs**
+  - Mixed OP_RETURN sub-types
+
+- **Group F – Policy Effects**
+  - strict vs. neutral vs. permissive
+
+- **Group G – Edge Cases**
+  - empty witness  
+  - malformed OP_RETURN  
+  - unknown scriptPubKey  
+
+Each item includes:
+- setup
+- exact hex inputs
+- expected labels
+- expected tiers
+- expected ARBDA
 
 ---
 
-## 5. Running BUDS LAB
+## 5. Registry
 
-BUDS LAB is a static HTML + JavaScript app.
-
-### Local
+The Lab uses:
 
 ```
-git clone https://github.com/defenwycke/bitcoin-unified-data-standard.git
-cd bitcoin-unified-data-standard/buds-lab
-python -m http.server 8080
+registry/registry-v2.json
 ```
 
-Then open:
+This file defines:
 
-- `http://localhost:8080` in your browser.
-
-### GitHub Codespaces
-
-From a Codespace terminal:
-
-```
-cd /workspaces/bitcoin-unified-data-standard/buds-lab
-python3 -m http.server 8080
-```
-
-Then open port `8080` from the **Ports** panel.
+- label names  
+- descriptions  
+- canonical tier mapping  
+- typical surfaces  
+- extension rules  
 
 ---
 
-## 6. Limitations
+## 6. Developer Notes
 
-- The Tag Engine currently implements only a **minimal** subset of BUDS:
-  - OP_RETURN detection,
-  - simple P2PKH detection,
-  - size-based witness classification.
-- It is not aware of:
-  - real transaction structure (inputs, value, sighash flags, etc.),
-  - complex contract scripts,
-  - specific L2 protocols.
-- The policy model is intentionally simple and opinionated.
+`buds-tag-engine.js` implements:
 
-Future work may include:
+- OP_RETURN heuristics (rollup root, ascii-hint, general embed)
+- witness heuristics (ordinal/inscription detection, vendor, blob)
+- tier mapping (registry + fallback prefix rules)
+- ARBDA worst-tier logic
+- optional policy scoring
 
-- more script templates (P2WPKH, P2TR, multisig, channel opens),
-- richer metadata labels,
-- a closer match to the C++ reference implementation, and
-- optional integration with real node RPCs.
+The C++ reference implementation is located in:
 
+```
+src/buds_tagger.* 
+```
+
+Both JS and C++ follow the same conceptual rules.
+
+---
+
+## 7. License
+
+- **Code** (buds-lab/, src/, tests/) — MIT  
+- **Documentation** — CC BY 4.0  
+- **BIP text** — BSD-2-Clause  
+
+---
+
+BUDS Lab is the recommended environment for experimenting with BUDS v2 and
+previewing how future policy decisions or registry extensions might behave.

@@ -1,188 +1,180 @@
-# BUDS Test Suite
+# BUDS Test Documentation
 
-This document describes the minimal C++ test suite for the BUDS Tagger (reference implementation).
+This document describes how the Bitcoin Unified Data Standard (BUDS) v2
+implementation is tested across:
 
-The goal of the tests is to:
+- the JS Tag Engine in `buds-lab/`
+- the C++ Tag Engine in `src/`
 
-- exercise the **basic classification pipeline**,
-- verify that key labels (`pay.standard`, `da.op_return_embed`,
-  `da.unknown`, `da.obfuscated`) behave as expected, and
-- provide concrete **test vectors** that can be reused in other
-  implementations and in the BIP text.
-
----
-
-## Files
-
-- `tests/test_buds_tagger.cpp`  
-  A standalone test runner with several small tests. It uses a very simple
-  assertion macro and returns:
-
-  - `0` on success (all tests passed),
-  - `1` on failure.
-
-- `src/buds_labels.*`, `src/buds_tagging.*`  
-  The reference Tagger and classification types used by the tests.
+No part of this document uses triple-backtick code blocks to ensure it never
+breaks GitHub or the ChatGPT rendering window.
 
 ---
 
-## Building and running the tests
+## 1. Test Structure Overview
 
-From the repo root:
+There are two layers of tests:
 
-```
-g++ -std=c++17 -Isrc \
-    tests/test_buds_tagger.cpp \
-    src/buds_labels.cpp \
-    src/buds_tagging.cpp \
-    -o buds-tests
+1. JS / Browser (BUDS Lab)
+2. C++ / Native (buds_tagger.cpp)
 
-./buds-tests
-```
-
-Expected output (example):
-
-```
-[TEST] P2PKH -> pay.standard
-[TEST] OP_RETURN -> da.op_return_embed
-[TEST] small witness blob -> da.unknown
-[TEST] large witness blob -> da.obfuscated
-[TEST] mixed tx (P2PKH + OP_RETURN + large witness)
-All BUDS tagger tests PASSED.
-```
-
-# Test Cases
-
-## 1. `Test_P2PKH_is_pay_standard`
-
-### **Shape**
-
-`SimpleTx` with:
-
-- `txid = "test-p2pkh"`
-- one `vout`:
-  - `scriptPubKey.asm = "OP_DUP OP_HASH160 <pubkeyhash> OP_EQUALVERIFY OP_CHECKSIG"`
-  - `scriptPubKey.hex = "76a91400112233445566778899aabbccddeeff0011223388ac"`
-
-### **Expectation**
-
-One tag:
-
-- `surface = "scriptpubkey[0]"`
-- first label = **`pay.standard`**
-
-**Meaning:**  
-The Tagger recognises standard P2PKH and treats it as a normal payment lane (**Tier T1**).
+The JS engine is the behavioural reference.  
+The C++ engine mirrors those rules.
 
 ---
 
-## 2. `Test_OpReturn_is_da_op_return_embed`
+## 2. JS Tests — BUDS Lab
 
-### **Shape**
+### 2.1 Files
 
-`SimpleTx` with:
+- Tag Engine: `buds-lab/buds-tag-engine.js`
+- Lab UI: `buds-lab/index.html`
+- Test Matrix: `buds-lab/docs/buds-lab-test-matrix.md`
 
-- `txid = "test-opreturn"`
-- one `vout`:
-  - `scriptPubKey.asm = "OP_RETURN 6f6b"`
-  - `scriptPubKey.hex = "6a026f6b"`
+### 2.2 Running BUDS Lab
 
-### **Expectation**
+    cd buds-lab
+    npm install
+    npm run dev
 
-One tag:
+Then open:
 
-- `surface = "scriptpubkey[0]"`
-- first label = **`da.op_return_embed`**
+    http://localhost:5173/
 
-**Meaning:**  
-The Tagger recognises OP_RETURN outputs and classifies them as embedded data (**Tier T2**).
+### 2.3 What You Can Test in the Lab
 
----
+- Construct transactions (builder mode)
+- Paste a JSON `SimpleTx` object (JSON mode)
+- Click “Run Tag Engine” to:
+  - show labels for each region
+  - show tier markers (T0–T3)
+  - show ARBDA score
+  - show policy effects for strict / neutral / permissive
 
-## 3. `Test_Witness_small_is_da_unknown`
+### 2.4 Test Groups (A–G)
 
-### **Shape**
+#### Group A — Baseline Payments
+- P2PKH / P2WPKH / P2TR outputs
+- Expected label: pay.standard (T1)
+- Expected ARBDA: T1
 
-`SimpleTx` with:
+#### Group B — OP_RETURN Sub-types
+- small ASCII payloads → meta.indexer_hint (T2)
+- small/medium ASCII → da.op_return_embed (T2)
+- rollup-style “6a20…” roots → commitment.rollup_root (T1)
+- large payloads → da.embed_misc (T2)
 
-- `txid = "test-wit-small"`
-- one witness entry:
-  - `stack_items_hex = ["0011223344556677"]` (8 bytes)
+#### Group C — Witness: Vendor / Unknown / Obfuscated
+- small ASCII witness ≤128 bytes → da.unregistered_vendor (T3)
+- mixed/non-ASCII medium blobs → da.unknown (T3)
+- >512 byte large blobs → da.obfuscated (T3)
 
-### **Expectation**
+#### Group D — Ordinal / Inscription
+- contains ASCII “ord”
+- small → meta.ordinal (T2)
+- large → meta.inscription (T2)
 
-One tag:
+#### Group E — Mixed Transactions
+Validates:
+- correct label per region
+- expected tier mapping
+- ARBDA dominance (worst tier wins)
 
-- `surface = "witness.stack[0:0]"`
-- first label = **`da.unknown`**
-
-**Meaning:**  
-Small witness items (≤ 512 bytes) are treated as unknown data (**Tier T3**),  
-but are tracked separately from large blobs.
-
----
-
-## 4. `Test_Witness_large_is_da_obfuscated`
-
-### **Shape**
-
-`SimpleTx` with:
-
-- `txid = "test-wit-large"`
-- one witness entry:
-  - `stack_items_hex = "<600 bytes of 0x00>"` (1200 hex chars)
-
-### **Expectation**
-
-One tag:
-
-- `surface = "witness.stack[0:0]"`
-- first label = **`da.obfuscated`**
-
-**Meaning:**  
-Large witness blobs are classified as **obfuscated data** (Tier T3) and receive heavier penalties.
+#### Groups F / G — Extended
+Reserved for adversarial and corner cases.
 
 ---
 
-## 5. `Test_Mixed_tx_has_all_expected_tags`
+## 3. C++ Tests — Tag Engine
 
-### **Shape**
+### 3.1 Files
 
-`SimpleTx` with:
+- Tagger: `src/buds_tagger.cpp`, `src/buds_tagger.h`
+- Example: `src/buds_demo.cpp`
+- Tests: `tests/test_buds_tagger.cpp`
 
-- `txid = "test-mixed"`
-- two outputs:
-  - P2PKH → **`pay.standard`**
-  - OP_RETURN → **`da.op_return_embed`**
-- one witness entry:
-  - large blob → **`da.obfuscated`**
+### 3.2 Build the C++ Tests
 
-### **Expectation**
+    g++ -std=c++17 -Isrc \
+        tests/test_buds_tagger.cpp \
+        src/buds_tagger.cpp \
+        -o buds-tests
 
-Three tags (one per region).
+Run:
 
-Across all labels:
+    ./buds-tests
 
-- at least one **`pay.standard`**
-- at least one **`da.op_return_embed`**
-- at least one **`da.obfuscated`**
+### 3.3 What the Tests Validate
 
-**Meaning:**  
-The Tagger correctly handles mixed transactions and produces multiple labels covering different surfaces.
+#### Payment Recognition
+- P2PKH / P2WPKH / P2TR →
+  - label: pay.standard
+  - tier: T1
+  - ARBDA: T1
+
+#### OP_RETURN Classification
+- ascii payload ≤8 bytes → meta.indexer_hint (T2)
+- ≤32 bytes ASCII → da.op_return_embed (T2)
+- ≤80 bytes → da.op_return_embed (T2)
+- rollup 32-byte payload → commitment.rollup_root (T1)
+- large payload → da.embed_misc (T2)
+
+#### Witness Classification
+- small ASCII → da.unregistered_vendor (T3)
+- medium non-ASCII → da.unknown (T3)
+- >512 bytes → da.obfuscated (T3)
+
+#### Ordinal Detection
+- contains “ord”
+  - small → meta.ordinal (T2)
+  - large → meta.inscription (T2)
+
+#### ARBDA
+- if any T3 → ARBDA = T3
+- else if any T2 → ARBDA = T2
+- else if any T1 → ARBDA = T1
+- else → T0
 
 ---
 
-# Relationship to BUDS LAB
+## 4. Manual Testing
 
-These C++ tests mirror the behaviours demonstrated in **BUDS LAB**:
+Use BUDS Lab to experiment with:
 
-- OP_RETURN → `da.op_return_embed`
-- P2PKH → `pay.standard`
-- small witness items → `da.unknown`
-- large witness blobs → `da.obfuscated`
+- real transactions
+- custom witness stacks
+- OP_RETURN patterns
+- adversarial blobs
+- new protocol hints
 
-These examples double as **canonical test vectors** for:
+Shows instantly:
+- region labels
+- tier mapping
+- ARBDA
+- fee policy interpretations
 
-- other language implementations of the BUDS Tag Engine,
-- node/policy integrations,
-- and the **BUDS BIP** “Test Vectors” section.
+---
+
+## 5. Adding New Tests
+
+1. Extend registry (`registry/registry-v2.json`)
+2. Update JS heuristics
+3. Update C++ heuristics
+4. Add JS test cases in test matrix
+5. Add C++ test in `tests/test_buds_tagger.cpp`
+6. Validate JS and C++ match
+
+---
+
+## 6. Non-Goals
+
+Tests do NOT check:
+- consensus validity
+- full node behaviour
+- mempool logic
+- script execution
+- segwit verification
+
+BUDS is purely descriptive.
+
+---

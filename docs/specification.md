@@ -1,201 +1,237 @@
-# BUDS Specification
+# BUDS Specification (Version 2.0 — Draft)
 
 The Bitcoin Unified Data Standard (BUDS) defines a minimal, optional framework for
 **describing**, **classifying**, and **tagging** data that appears inside Bitcoin transactions.
 
-BUDS does not modify Bitcoin consensus or enforce any node policy.  
-It provides a shared vocabulary so implementations can reason about transaction data consistently.
+BUDS does **not** modify Bitcoin consensus or enforce any node policy.  
+It provides a shared vocabulary for wallets, nodes, indexers, and off-chain systems.
+
+The canonical v2 registry:
+
+- `registry/registry-v2.json`
+
+Earlier v1 registry files remain valid for legacy tooling, but new systems SHOULD
+prefer v2.
 
 ---
 
 ## 1. Definitions
 
 ### **1.1 Label**
-A **label** is a canonical name describing a type of data that may appear inside a transaction.
+
+A **label** is a canonical name describing a type of data that can appear in a transaction.
 
 Examples:  
-`pay.standard`, `meta.inscription`, `commitment.rollup_root`, `da.obfuscated`.
-
-The full set of known labels is defined in `registry/registry.json`.
+- `pay.standard`  
+- `meta.inscription`  
+- `commitment.rollup_root`  
+- `da.obfuscated`
 
 Labels describe **intent**, not guaranteed truth.
 
 ---
 
 ### **1.2 Region**
-A **region** is a byte range inside a transaction located within a specific surface, such as:
+
+A **region** is a slice of bytes within a transaction.  
+Regions live on a specific **surface**, such as:
 
 - `scriptsig`
 - `witness.stack[n]`
 - `witness.script`
 - `scriptpubkey`
 - `op_return`
-- `segop`
 - `coinbase`
-- `tx-level` fields (version, locktime, sequence)
-
-A region may contain one or more labels.
+- `tx-level` fields like version/locktime/sequence
 
 ---
 
 ### **1.3 Tag**
-A **tag** is the association of:
+
+A **tag** associates:
 
 - a region  
-- one or more labels  
+- with zero or more labels.
 
-Tags are produced by the classification process described in this specification.
+Tags are the output of the classification process.
 
 ---
 
-### **1.4 Suggested Categories (T0–T3)**  
-BUDS defines four **conceptual categories**, used only as guidance:
+### **1.4 Suggested Tiers (T0–T3)**
 
-- **T0 Consensus-critical**  
-- **T1 Economic/System-critical**  
-- **T2 Metadata/Application**  
-- **T3 Unknown/Obfuscated**
+Tiers are **conceptual**, used for visualisation and optional policy:
 
-These categories are **non-normative**.  
-Implementations may ignore them or reassign labels arbitrarily.
+- **T0 — Consensus / Validation**  
+  (signatures, validation script, taproot programs)
+
+- **T1 — Economic / System**  
+  (channels, rollup anchors, vault structures, pool tags)
+
+- **T2 — Metadata / Application**  
+  (inscriptions, ordinal metadata, OP_RETURN embeds)
+
+- **T3 — Unknown / Bulk**  
+  (opaque pushes, large witness blobs, unclassified vendor data)
+
+Each label in the registry includes a `suggested_tier`.  
+These are **not mandatory** and may be overridden.
 
 ---
 
 ## 2. Registry
 
-The BUDS registry defines the set of known labels.
+The registry is the canonical list of known labels.
 
-- Stored in: `registry/registry.json`
-- Each entry includes:
-  - `label`
-  - `description`
-  - `surfaces`
-  - `suggested_category` (optional hint)
+- v2 registry location:  
+  `registry/registry-v2.json`
 
-Nodes may rely on registry information, ignore it, or override it.
+Each entry includes:
 
-The registration process is described in `registry-process.md`.
+- `label`
+- `description`
+- `surfaces`
+- `suggested_tier`
+- optional metadata fields
+
+Nodes may ignore or override registry hints.
+
+The registration process is defined in:
+
+- `docs/registry-process.md`
 
 ---
 
 ## 3. Classification
 
-Classification is the process of identifying regions of a transaction and associating labels.
+Classification is the process of identifying:
 
-BUDS does **not** prescribe how implementations perform classification.  
-Nodes are free to use:
+- the **regions** of interest in a transaction
+- the **labels** that apply to each region
 
-- protocol-specific patterns,
-- structural recognition,
-- heuristics,
-- or private logic.
+BUDS does not mandate a specific algorithm.  
+Implementations may use:
 
-A minimal reference approach is documented in `tagging-method.md`.
+- pattern matching  
+- structure decoding  
+- heuristics  
+- vendor-specific logic  
+
+A minimal approach is documented in:
+
+- `docs/tagging-method.md`
 
 Classification SHOULD produce:
 
 - a list of regions
 - zero or more labels per region
 
-Implementations may assign multiple labels to the same region.
+Implementations MAY assign multiple labels to a single region.
 
 ---
 
 ## 4. Tagging Interface
 
-Tagging is the output of classification.  
 A tag is defined as:
 
 ```
 {
-"surface": "witness.stack[1]",
-"start": 0,
-"end": 123,
-"labels": ["da.obfuscated"]
+  "surface": "witness.stack[1]",
+  "start": 0,
+  "end": 123,
+  "labels": ["da.obfuscated"]
 }
 ```
 
 Implementations MAY:
 
-- provide tags to policy modules,
-- expose tags through RPCs or logs,
-- or ignore tagging entirely.
+- provide tags to policy modules
+- expose tags through RPC APIs
+- log them for analytics
+- or ignore tagging entirely
 
-Tags have no effect on consensus validation.
+Tags have **zero effect on consensus validation**.
 
 ---
 
 ## 5. Policy Integration (Optional)
 
-Nodes and miners MAY use labels or categories as inputs to local policy, including:
+Node and miner policies MAY use tags or tiers for local decisions, such as:
 
-- mempool admission,
-- feerate adjustments,
-- block template construction,
-- pruning/retention rules.
+- mempool admission  
+- dynamic feerate requirements  
+- block template selection  
+- pruning/retention strategies  
 
-BUDS does **not** define any policy mechanics, thresholds, or required behaviour.
+BUDS provides **no** policy rules.  
+All policy is implementation defined.
 
-Example usage (non-normative) is in `policy-interface.md`.
+Examples of optional policy usage are described in:
 
-Implementations MAY also compute a transaction-level ARBDA tier (see docs/arbda.md) as a worst-case summary over all regions for use in local policy.
+- `docs/policy-interface.md`
+- `docs/arbda.md`
 
----
+ARBDA provides a transaction-level “worst-case tier” summary.  
+A common rule (non-normative):
 
-## 6. Non-Goals
-
-BUDS does **not**:
-
-- define consensus rules,
-- enforce fee policies,
-- mandate censorship or prioritisation,
-- restrict transaction formats,
-- require the use of labels,
-- guarantee the accuracy of classification.
-
-BUDS is descriptive, not prescriptive.
+> If any region is T3 → the transaction is ARBDA T3.
 
 ---
 
-## 7. Security and Privacy Notes
+## 6. Surfaces & Encodings
 
-- Misclassified data does not affect consensus validity.
-- Nodes may disagree on tags or classifications.
-- Classification heuristics must not assume correctness of user-provided data.
-- Implementations should avoid leaking sensitive information when exposing tags.
+BUDS is **encoding-agnostic**.  
+It applies to any data structure that appears on a surface.
 
----
+Surfaces include:
 
-## 8. Reference Implementations
+- `scriptsig`
+- `scriptpubkey`
+- `witness.stack[n]`
+- `witness.script`
+- `op_return`
+- `coinbase`
+- transaction-level metadata
 
-Non-normative example code is provided in:
+Data may be encoded as:
 
-```
-src/buds_labels.*
-src/buds_tagging.*
-src/buds_policy_example.*
-```
+- raw bytes  
+- JSON  
+- TLV  
+- CBOR  
+- or any arbitrary vendor-defined structure  
 
-These are illustrative only.
-
----
-
-## 9. Compatibility
-
-- Fully compatible with all current and future Bitcoin transactions.
-- No changes required to transaction format, consensus rules, or script.
-- Nodes may adopt or ignore BUDS independently.
+BUDS does **not** require or prefer any encoding.
 
 ---
 
-## 10. Summary
+## 7. Security & Privacy Considerations
+
+- Misclassification does not affect consensus.
+- Nodes may disagree on classification.
+- Implementations should avoid leaking sensitive metadata.
+- Do not assume correctness of user-provided data.
+- Optional policies must not imply censorship without operator intent.
+
+---
+
+## 8. Compatibility
+
+- Fully compatible with all Bitcoin transactions.  
+- Requires no consensus changes.  
+- v1 registry files remain usable for legacy systems.  
+- v2 refines naming, tiers, and registry structure.  
+- Nodes may adopt BUDS partially or fully.  
+
+---
+
+## 9. Summary
 
 BUDS provides:
 
-- a standard data type registry,
-- a simple classification model,
-- a neutral tagging interface,
-- optional hooks for local policy.
+- a standardised data‐label registry  
+- a simple tagging model  
+- optional tier hints  
+- optional policy hooks  
 
-Everything else remains under full control of the node operator.
+Everything else remains fully under operator control.
 

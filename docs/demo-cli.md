@@ -1,102 +1,78 @@
 # BUDS Demo CLI
 
-The BUDS repository includes two small command-line programs:
+The BUDS repository includes a small C++ demonstration binary:
 
-- `buds-demo` – simple demo binary, always runs the built-in example transaction.
-- `buds-cli` – small CLI wrapper with `help` / `example` commands.
+- `buds-demo` – runs a built-in example transaction through the BUDS v2 TagEngine.
 
-Both use the same reference implementation:
+The demo uses the reference implementation:
 
-- `buds_labels.*`
-- `buds_tagging.*`
-- `buds_policy_example.*`
+- `src/buds_tagger.*`
 
-They are **non-normative** and exist only to show how BUDS tagging and policy can work end-to-end.
+It is **non-normative** and exists only to show how BUDS tagging, tiers, ARBDA,
+and simple policy scoring can be wired together.
 
 ---
 
-## Build
+## 1. Building the demo
 
-From the repository root:
+From the repository root on a machine with a C++17 compiler:
 
-### Build the demo binary
+    g++ -std=c++17 -Isrc \
+        src/buds_demo.cpp \
+        src/buds_tagger.cpp \
+        -o buds-demo
 
-```
-g++ -std=c++17 -Isrc \
-    src/buds_demo.cpp \
-    src/buds_labels.cpp \
-    src/buds_tagging.cpp \
-    src/buds_policy_example.cpp \
-    -o buds-demo
-```
+On Windows (PowerShell / Command Prompt) you can write this as:
 
-### Build the CLI binary
+    g++ -std=c++17 -Isrc src\buds_demo.cpp src\buds_tagger.cpp -o buds-demo.exe
 
-```
-g++ -std=c++17 -Isrc \
-    src/buds_cli.cpp \
-    src/buds_labels.cpp \
-    src/buds_tagging.cpp \
-    src/buds_policy_example.cpp \
-    -o buds-cli
-```
-
-If your shell doesn’t like the line breaks, put each command on a single line.
+Adjust the compiler command if you are using `clang++` or a different toolchain.
 
 ---
 
-## Run
+## 2. What the demo does
 
-### Demo (no arguments)
+The demo:
 
-```
-./buds-demo
-```
+1. Constructs a simple transaction in memory with:
+   - a standard payment output (`pay.standard`)
+   - an OP_RETURN region
+   - a witness blob
+2. Runs the BUDS TagEngine to:
+   - classify each region
+   - compute tier counts (T0–T3)
+   - compute the ARBDA worst-tier score
+3. Applies an example policy profile to compute:
+   - a **required feerate** (after multipliers)
+   - an **effective score** for template selection / ordering
+4. Prints results to stdout.
 
-Runs the built-in example transaction and prints:
-
-- all BUDS tags (surface, byte range, labels),
-- required feerate given the example policy,
-- effective feerate score.
-
-### CLI
-
-Default (same as `example`):
-
-```
-./buds-cli
-```
-
-Help:
-
-```
-./buds-cli help
-```
-
-Explicit example command:
-
-```
-./buds-cli example
-```
+Exact thresholds and labels are illustrative only. They are not a recommendation
+for mainnet policy.
 
 ---
 
-## What the Example Does
+## 3. Relationship to the Browser Lab
 
-The built-in example transaction contains:
+The C++ demo is conceptually aligned with the browser-based lab in `buds-lab/`:
 
-- one standard payment output → labelled `pay.standard`
-- one OP_RETURN output → labelled `da.op_return_embed`
-- one large witness blob → labelled `da.obfuscated`
+- both use the BUDS v2 labels and tiers
+- both apply similar heuristics for OP_RETURN / witness classification
+- both compute ARBDA as a worst-tier transaction score
 
-The binaries:
+The lab offers an interactive, visual way to explore behaviour.  
+The C++ demo shows how a node or off-chain tool might integrate tagging in a
+native environment.
 
-1. Build this transaction in memory.
-2. Run the BUDS tagger to classify its regions.
-3. Print all tags.
-4. Apply the example policy to compute:
-   - the **required feerate** (after label-based multipliers), and
-   - an **effective feerate score** (for template selection or ordering).
+---
 
-This is only a reference demonstration.  
-Policies, labels, and thresholds are for illustration, not a recommendation.
+## 4. Status
+
+The demo is **optional**:
+
+- not part of Bitcoin consensus
+- not required for BUDS adoption
+- safe to remove or replace in downstream projects
+
+It is included for experimentation, documentation, and regression testing of the
+C++ TagEngine.
