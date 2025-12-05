@@ -381,34 +381,48 @@ No tags yet. Build or paste a transaction and click "Run Tag Engine".
 
   <script src="buds-tag-engine.js"></script>
   <script>
+    // Load BUDS v2 registry for label -> tier mapping in the lab.
+    (function loadBudsRegistry() {
+      fetch("registry-v2.json")
+        .then((resp) => resp.json())
+        .then((data) => {
+          if (window.BUDS_SET_REGISTRY) {
+            window.BUDS_SET_REGISTRY(data);
+          }
+        })
+        .catch((err) => {
+          console.error("BUDS: failed to load registry-v2.json for lab", err);
+        });
+    })();
+
     let currentInputMode = "builder";
     let lastResult = null;
-
-    // BUDS v2 labels by tier, derived from BUDS_REGISTRY_V2 (from buds-tag-engine.js)
-    const BUDS_LABELS_BY_TIER = (() => {
-      const out = { T0: [], T1: [], T2: [], T3: [] };
-      if (typeof BUDS_REGISTRY_V2 === "object") {
-        Object.entries(BUDS_REGISTRY_V2).forEach(([label, tier]) => {
-          if (!out[tier]) out[tier] = [];
-          out[tier].push(label);
-        });
-      }
-      Object.keys(out).forEach(tier => out[tier].sort());
-      return out;
-    })();
 
     // Build a <select> HTML snippet for choosing a BUDS label.
     // First option = "(auto: infer type)" so the engine uses its own heuristics.
     function buildBudsLabelSelectHtml(selected = "") {
+      const labelsByTier = { T0: [], T1: [], T2: [], T3: [] };
+
+      if (typeof BUDS_LABEL_TIER === "object") {
+        Object.entries(BUDS_LABEL_TIER).forEach(([label, tier]) => {
+          if (!labelsByTier[tier]) {
+            labelsByTier[tier] = [];
+          }
+          labelsByTier[tier].push(label);
+        });
+      }
+
+      Object.keys(labelsByTier).forEach((tier) => labelsByTier[tier].sort());
+
       let html = '<select data-field="buds-label">';
       html += '<option value="">(auto: infer type)</option>';
 
-      ["T0", "T1", "T2", "T3"].forEach(tier => {
-        const labels = BUDS_LABELS_BY_TIER[tier] || [];
+      ["T0", "T1", "T2", "T3"].forEach((tier) => {
+        const labels = labelsByTier[tier] || [];
         if (!labels.length) return;
         html += `<optgroup label="${tier}">`;
-        labels.forEach(label => {
-          const sel = (label === selected) ? " selected" : "";
+        labels.forEach((label) => {
+          const sel = label === selected ? " selected" : "";
           html += `<option value="${label}"${sel}>${label}</option>`;
         });
         html += "</optgroup>";
@@ -798,8 +812,8 @@ effective score  : ${policy.score.toFixed(2)} (scaled sat/vB)
       // ARBDA card
       const card = document.getElementById("arbdaScoreCard");
       card.classList.remove("arbda-t0", "arbda-t1", "arbda-t2", "arbda-t3");
-      card.classList.add("arbda-" + arbdaTier.toLowerCase());
       document.getElementById("arbdaScoreValue").textContent = arbdaTier;
+      card.classList.add("arbda-" + arbdaTier.toLowerCase());
 
       let desc;
       if (arbdaTier === "T3") {

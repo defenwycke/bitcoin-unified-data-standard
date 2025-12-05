@@ -228,57 +228,48 @@ docs/registry-process.md
 
 # BUDS Lab (Interactive Tag Engine)
 
-The BUDS Lab is a browser-based playground for:
+The **BUDS Lab** is a browser-based playground for:
 
 - label classification  
 - region tagging  
-- tier detection  
+- tier detection (T0–T3)  
 - ARBDA scoring  
-- policy simulation  
-- Builder / JSON mode  
-- output & witness editing  
-- exportable JSON results  
+- policy profile simulation (strict / neutral / permissive)  
 
-### **Location**
+Location:
 
-```
-buds-lab/index.html
-```
+- `buds-lab/index.html`
 
 Documentation:
 
-```
-docs/buds-lab.md
-```
+- `docs/buds-lab.md`
+- `buds-lab/docs/buds-lab-test-matrix.md`
 
-### **Running locally**
+### Prerequisites
 
-Requires Node.js.
+- **Node.js** (v18+ recommended)
+- **npm** (bundled with Node)
+- Vite is installed locally as a dev dependency from `buds-lab/package.json`  
+  (no global install needed).
 
-```
-cd buds-lab
-npm install
-npm run dev
-```
+### Running the lab
+
+From the repo root:
+
+    cd buds-lab
+    npm install
+    npm run dev
 
 Then open:
 
-```
-http://localhost:5173/
-```
+    http://localhost:5173/
 
-### **Features**
+You can:
 
-- Transaction builder (outputs + witness)
-- Automatic hex/type inference
-- OP_RETURN sub-classification  
-- Ordinal / inscription hints  
-- Vendor / unknown / obfuscated witness detection  
-- ARBDA score card  
-- Policy profiles: strict / neutral / permissive  
-- Export `lastResult` as JSON  
-
-Ideal for testing heuristics or teaching the BUDS model.
+- build transactions in **Builder** mode  
+- paste JSON in **JSON** mode  
+- click **Run Tag Engine** to see labels, tiers, ARBDA, and policy output  
+- export the full result as JSON for further analysis
 
 ---
 
@@ -317,33 +308,67 @@ This implementation is **non-consensus and advisory**, intended as a reference f
 
 # Test Suite
 
-The v2 test suite consists of:
+BUDS v2 includes two layers of tests:
 
-- `tests/test_buds_tagger.cpp`  
-- documentation: `docs/tests.md`  
-- full JS test matrix: `buds-lab/docs/buds-lab-test-matrix.md`
-
-### **Build & run (C++)**
-
-```
-g++ -std=c++17 -Isrc \
-    tests/test_buds_tagger.cpp \
-    src/buds_tagger.cpp \
-    -o buds-tests
-
-./buds-tests
-```
-
-Tests cover:
-
-- P2PKH → `pay.standard`  
-- OP_RETURN sub-types  
-- vendor / unknown / obfuscated witness  
-- ordinal / inscription hints  
-- mixed tier transactions  
-- ARBDA worst-tier scoring  
+1. **C++ TagEngine tests**  
+2. **JS / browser tests via the BUDS Lab**
 
 ---
+
+## C++ TagEngine Tests
+
+Files:
+
+- `src/buds_tagger.h`
+- `src/buds_tagger.cpp`
+- `tests/test_buds_tagger.cpp`
+
+### Build and run (Linux / macOS)
+
+    g++ -std=c++17 -Wall -Wextra -Isrc \
+        tests/test_buds_tagger.cpp \
+        src/buds_tagger.cpp \
+        -o buds-tests
+
+    ./buds-tests
+
+### Build and run (Windows, MinGW example)
+
+    g++ -std=c++17 -Wall -Wextra -Isrc ^
+        tests\test_buds_tagger.cpp ^
+        src\buds_tagger.cpp ^
+        -o buds-tests.exe
+
+    .\buds-tests.exe
+
+Expected output ends with:
+
+    All BUDS TagEngine tests passed.
+
+These tests verify:
+
+- `pay.standard` detection for payment outputs  
+- OP_RETURN sub-types (hint / embed / rollup root / misc)  
+- witness vendor / unknown / obfuscated blobs  
+- ordinal / inscription hints  
+- ARBDA worst-tier score (T0–T3)
+
+---
+
+## JS / Lab Tests
+
+The browser lab (`buds-lab/`) exposes the same TagEngine via an interactive UI.
+
+- Tag Engine: `buds-lab/buds-tag-engine.js`
+- Lab UI: `buds-lab/index.html`
+- Test matrix: `buds-lab/docs/buds-lab-test-matrix.md`
+
+Run the lab and exercise the test matrix manually to visually confirm:
+
+- region-level labels  
+- tier markers (T0–T3)  
+- ARBDA  
+- policy profiles (strict / neutral / permissive)
 
 # BIP Draft
 

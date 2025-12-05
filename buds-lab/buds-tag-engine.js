@@ -9,8 +9,14 @@
 //   engine.computeArbdaTierFromCounts(counts)
 //   engine.computePolicy(classification, baseMinFeerate, txFeerate)
 //   engine.getTierForLabel(label)
+//
+// NOTE: Tier mapping (label -> T0..T3) is loaded at runtime from
+// buds-lab/registry-v2.json via the BUDS_SET_REGISTRY hook below.
+// We also ship sane defaults so the lab still works if the fetch fails.
 
-const BUDS_REGISTRY_V2 = {
+// Global mapping from label -> tier (T0..T3), used by both the TagEngine
+// and the UI. Defaults mirror registry/registry-v2.json.
+let BUDS_LABEL_TIER = {
   "consensus.sig": "T0",
   "consensus.script": "T0",
   "consensus.taproot_prog": "T0",
@@ -32,6 +38,49 @@ const BUDS_REGISTRY_V2 = {
   "da.obfuscated": "T3",
   "da.unregistered_vendor": "T3"
 };
+
+/**
+ * Load mapping from a registry JSON object:
+ * {
+ *   "version": 2,
+ *   "labels": [
+ *     { "label": "pay.standard", "suggested_category": "T1", ... },
+ *     ...
+ *   ]
+ * }
+ *
+ * If the JSON is valid and contains labels, we replace BUDS_LABEL_TIER.
+ * If parsing fails or labels array is empty, we keep the defaults.
+ */
+function budsSetRegistryFromJson(registryJson) {
+  try {
+    if (!registryJson || !Array.isArray(registryJson.labels)) return;
+
+    const nextMap = {};
+    registryJson.labels.forEach((entry) => {
+      if (!entry || !entry.label) return;
+      const label = String(entry.label);
+      const tier = entry.suggested_category || "T3";
+      nextMap[label] = tier;
+    });
+
+    if (Object.keys(nextMap).length > 0) {
+      BUDS_LABEL_TIER = nextMap;
+      if (typeof console !== "undefined") {
+        console.log("BUDS: registry-v2 applied to label->tier map", BUDS_LABEL_TIER);
+      }
+    }
+  } catch (e) {
+    if (typeof console !== "undefined") {
+      console.error("BUDS: failed to apply registry JSON", e);
+    }
+  }
+}
+
+// Expose hook for index.html to call once registry-v2.json is fetched.
+if (typeof window !== "undefined") {
+  window.BUDS_SET_REGISTRY = budsSetRegistryFromJson;
+}
 
 class BudsTagEngine {
   constructor(policyProfile = "neutral") {
@@ -214,21 +263,16 @@ class BudsTagEngine {
         } else {
           const asciiLike = this.isMostlyAscii(itemHex);
 
-          // Very large blobs are always treated as obfuscated bulk data.
-          if (byteLen >= 512) {
-            labels.push("da.obfuscated");
-          }
-          // Small/medium mostly-ASCII witness that isn't ord:
-          // looks like vendor protocol state.
-          else if (asciiLike && byteLen >= 16) {
+          // Small/medium mostly-ASCII witness that isn't ord: treat as
+          // unregistered vendor protocol data.
+          if (byteLen <= 128 && asciiLike) {
             labels.push("da.unregistered_vendor");
           }
-          // Medium-large non-ASCII blobs (e.g. 256–511 bytes) are also
-          // considered obfuscated, even if they don't cross 512 bytes.
-          else if (!asciiLike && byteLen >= 256) {
+          // Large blobs => obfuscated bulk data.
+          else if (byteLen > this.largeBlobThreshold) {
             labels.push("da.obfuscated");
           }
-          // Everything else is unknown bulk data.
+          // Everything else => unknown bulk data.
           else {
             labels.push("da.unknown");
           }
@@ -251,9 +295,9 @@ class BudsTagEngine {
   getTierForLabel(label) {
     if (!label) return "T3";
 
-    // 1) registry mapping
-    const reg = BUDS_REGISTRY_V2[label];
-    if (reg) return reg;
+    // 1) registry mapping (from registry-v2.json, if loaded)
+    const regTier = BUDS_LABEL_TIER[label];
+    if (regTier) return regTier;
 
     // 2) fallback prefix rules – for experimental / unregistered labels
     if (label.startsWith("consensus.")) return "T0";
